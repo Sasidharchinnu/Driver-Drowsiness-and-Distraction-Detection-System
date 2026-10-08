@@ -1,0 +1,92 @@
+# =============================================================================
+# Driver Drowsiness Detection - central configuration
+# Every tunable number lives here so you never have to hunt through the code.
+# =============================================================================
+
+camera:
+  index: 0              # 0 = default built-in webcam. Try 1, 2... for external cams.
+  width: 640            # capture width in pixels (smaller = faster)
+  height: 480           # capture height in pixels
+  fps: 30               # requested camera FPS (the driver may ignore this)
+  flip_horizontal: true # mirror the image so it feels like a mirror to the driver
+  warmup_frames: 5      # frames to throw away while the sensor auto-exposes
+
+model:
+  # Path to the YOLO checkpoint. Downloaded by tools/download_models.py.
+  # If you train your own 5-class model, point this at runs/detect/*/weights/best.pt
+  weights: "models/yolov11n-face.pt"
+  # "auto" picks mps on Apple Silicon, cuda on NVIDIA, otherwise cpu.
+  device: "auto"
+  confidence: 0.35      # ignore detections below this confidence
+  iou: 0.45             # NMS overlap threshold
+  imgsz: 480            # YOLO input size; must be a multiple of 32
+  max_detections: 5     # at most this many faces per frame
+  half_precision: false # fp16. Leave false on MPS - it is not always stable.
+
+landmarks:
+  enabled: true         # use MediaPipe FaceMesh for EAR / MAR
+  max_faces: 1          # we only score the driver
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  refine: true          # refined iris/lip landmarks -> more accurate EAR
+
+drowsiness:
+  # ---- Eye Aspect Ratio (EAR) ----
+  ear_threshold: 0.21          # below this, the eye counts as CLOSED
+  ear_consec_frames: 2         # frames below threshold before we trust it
+  blink_max_duration: 0.40     # s. A closure shorter than this is a normal blink.
+  microsleep_duration: 1.20    # s. A closure longer than this is a microsleep.
+
+  # ---- Mouth Aspect Ratio (MAR) ----
+  mar_threshold: 0.60          # above this, the mouth counts as wide open
+  yawn_min_duration: 0.80      # s. Mouth must stay open this long to be a yawn.
+
+  # ---- PERCLOS (percentage of eyelid closure over time) ----
+  perclos_window: 60.0         # s. Rolling window used for PERCLOS and rates.
+  perclos_threshold: 0.20      # 20% closed time over the window = fatigued
+
+  # ---- Score weights (must add up to 1.0) ----
+  weights:
+    perclos: 0.40              # sustained closure over the window
+    closure: 0.35              # how long the eyes are closed RIGHT NOW
+    yawn: 0.15                 # yawn frequency
+    blink: 0.10                # abnormal blink rate
+
+  # ---- Status bands for the 0-100 score ----
+  warning_score: 40            # >= this -> WARNING
+  drowsy_score: 60             # >= this -> DROWSY (alarm)
+  score_smoothing: 0.25        # 0-1 exponential smoothing; lower = smoother
+
+  # ---- Blink-rate sanity range (blinks per minute) ----
+  normal_blink_rate_min: 8
+  normal_blink_rate_max: 28
+
+heatmap:
+  enabled: true
+  alpha: 0.45           # 0 = invisible overlay, 1 = heatmap only
+  colormap: "JET"       # any OpenCV colormap name: JET, TURBO, INFERNO, HOT...
+  eye_sigma_scale: 0.55 # Gaussian width for eyes, relative to eye box size
+  mouth_sigma_scale: 0.50
+  face_sigma_scale: 0.90
+  decay: 0.80           # temporal smoothing so the heatmap does not flicker
+
+alarm:
+  enabled: true
+  sound_file: "assets/alarm.wav"
+  cooldown: 3.0         # s. Minimum gap between two alarm sounds.
+  min_trigger_duration: 0.6  # s the state must stay DROWSY before sounding
+  volume: 0.8           # 0.0 - 1.0
+
+ui:
+  show_boxes: true
+  show_labels: true
+  show_confidence: true
+  show_landmarks: false # draw the raw FaceMesh points (useful for demos)
+  show_hud: true        # the on-frame text panel
+  target_fps: 30        # the loop sleeps to avoid burning CPU above this
+  fps_smoothing: 0.9    # exponential smoothing for the FPS readout
+
+logging:
+  enabled: true
+  directory: "logs"
+  level: "INFO"

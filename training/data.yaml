@@ -1,0 +1,47 @@
+# =============================================================================
+# YOLO dataset definition for the custom 5-class drowsiness model.
+#
+# Ultralytics reads this file to find the images and to map class ids to names.
+# `path` is the dataset root; `train`/`val`/`test` are relative to it.
+#
+# Expected folder layout (YOLO "detect" format):
+#
+#   training/dataset/
+#   |-- images/
+#   |   |-- train/   frame_000001.jpg ...
+#   |   |-- val/     frame_000101.jpg ...
+#   |   `-- test/    frame_000151.jpg ...
+#   `-- labels/
+#       |-- train/   frame_000001.txt ...
+#       |-- val/     frame_000101.txt ...
+#       `-- test/    frame_000151.txt ...
+#
+# Every image has a .txt label file with the SAME basename. Each line is one
+# object, in normalised (0-1) coordinates relative to the image size:
+#
+#   <class_id> <x_center> <y_center> <width> <height>
+#
+# Example label file (a face, two open eyes, a closed mouth):
+#   0 0.502 0.470 0.331 0.442
+#   1 0.441 0.404 0.062 0.031
+#   1 0.564 0.404 0.062 0.031
+#   4 0.503 0.567 0.101 0.038
+#
+# An image with no objects simply has an empty .txt file.
+# =============================================================================
+
+path: dataset        # relative to this file's folder (training/)
+train: images/train
+val: images/val
+test: images/test
+
+# Class ids MUST stay in this order - they are baked into the trained weights
+# and are read back by src/detector.py.
+names:
+  0: face
+  1: eye_open
+  2: eye_closed
+  3: mouth_open      # a yawn / wide-open mouth
+  4: mouth_closed
+
+nc: 5                # number of classes

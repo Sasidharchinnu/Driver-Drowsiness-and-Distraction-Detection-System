@@ -1,0 +1,1191 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Driver Drowsiness Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  /* ---------- tokens: complete light palette on bare :root ---------- */
+  :root {
+    --ground:      #f4f5f3;
+    --surface:     #ffffff;
+    --surface-2:   #eceeea;
+    --ink:         #15181a;
+    --ink-2:       #3d4449;
+    --muted:       #656d73;
+    --rule:        #d9ddd8;
+    --rule-strong: #bcc2bd;
+
+    /* teal = the "sensor" accent, used sparingly */
+    --accent:      #0d7a76;
+    --accent-soft: #d3e8e6;
+
+    /* semantic telltale colours, borrowed from the car's own vocabulary */
+    --alert:   #15803d;
+    --warning: #b45309;
+    --drowsy:  #b91c1c;
+    --alert-bg:   #dcefe1;
+    --warning-bg: #f6e6cf;
+    --drowsy-bg:  #f6dcdc;
+
+    --shadow: 0 1px 2px rgba(20,24,26,.05), 0 6px 20px rgba(20,24,26,.05);
+
+    --display: "Barlow Semi Condensed", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #101314;
+      --surface:     #171b1c;
+      --surface-2:   #1f2426;
+      --ink:         #e9ecea;
+      --ink-2:       #c2c8c6;
+      --muted:       #8d9694;
+      --rule:        #2a3032;
+      --rule-strong: #3d4548;
+
+      --accent:      #38bfb5;
+      --accent-soft: #10312f;
+
+      --alert:   #4ade80;
+      --warning: #fbbf24;
+      --drowsy:  #f87171;
+      --alert-bg:   #12301d;
+      --warning-bg: #35260c;
+      --drowsy-bg:  #361616;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #101314;
+    --surface:     #171b1c;
+    --surface-2:   #1f2426;
+    --ink:         #e9ecea;
+    --ink-2:       #c2c8c6;
+    --muted:       #8d9694;
+    --rule:        #2a3032;
+    --rule-strong: #3d4548;
+
+    --accent:      #38bfb5;
+    --accent-soft: #10312f;
+
+    --alert:   #4ade80;
+    --warning: #fbbf24;
+    --drowsy:  #f87171;
+    --alert-bg:   #12301d;
+    --warning-bg: #35260c;
+    --drowsy-bg:  #361616;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+  }
+
+  /* ---------- base ---------- */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 0 72px;
+  }
+
+  h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; margin: 0; }
+
+  h2 {
+    font-size: 30px; font-weight: 600; letter-spacing: -.01em;
+    line-height: 1.15; margin-bottom: 6px;
+  }
+  h3 {
+    font-size: 21px; font-weight: 600; line-height: 1.25;
+    margin: 30px 0 8px; color: var(--ink);
+  }
+  h4 {
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--muted); margin: 22px 0 8px;
+  }
+
+  p { margin: 0 0 14px; max-width: 68ch; color: var(--ink-2); }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  code {
+    font-family: var(--mono); font-size: .88em;
+    background: var(--surface-2); border: 1px solid var(--rule);
+    padding: 1px 5px; border-radius: 4px; color: var(--ink);
+  }
+  pre {
+    font-family: var(--mono); font-size: 13px; line-height: 1.65;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0 0 16px;
+    color: var(--ink);
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+  .cmt { color: var(--muted); }
+
+  strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- header ---------- */
+  header.hero {
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+    padding-block: 40px 30px;
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+    margin-bottom: 12px;
+  }
+  h1 {
+    font-size: clamp(38px, 7vw, 58px); font-weight: 700;
+    letter-spacing: -.022em; line-height: .98; margin-bottom: 14px;
+  }
+  .standfirst {
+    font-size: 18px; line-height: 1.55; color: var(--ink-2);
+    max-width: 60ch; margin-bottom: 26px;
+  }
+
+  .spec-row {
+    display: flex; flex-wrap: wrap; gap: 10px 32px;
+    border-top: 1px solid var(--rule); padding-top: 18px;
+  }
+  .spec { display: flex; flex-direction: column; gap: 1px; }
+  .spec dt {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .spec dd {
+    margin: 0; font-family: var(--display); font-size: 21px;
+    font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+  .spec dd small { font-size: 12px; font-weight: 500; color: var(--muted); }
+
+  /* ---------- section numbering: these are real pipeline stages ---------- */
+  section { padding-block: 34px; border-top: 1px solid var(--rule); }
+  section:first-of-type { border-top: 0; }
+
+  .sec-head { display: flex; gap: 16px; align-items: baseline; margin-bottom: 18px; }
+  .sec-num {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--accent); letter-spacing: .08em; padding-top: 6px;
+    flex: 0 0 auto; font-variant-numeric: tabular-nums;
+  }
+  .sec-title { flex: 1 1 auto; min-width: 0; }
+  .sec-title p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* ---------- pipeline stages ---------- */
+  .stage {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 0 14px;
+    position: relative;
+  }
+  .stage + .stage { margin-top: 2px; }
+  .stage-mark {
+    grid-column: 1; display: flex; flex-direction: column; align-items: center;
+  }
+  .stage-dot {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--surface); border: 1.5px solid var(--rule-strong);
+    color: var(--ink); font-family: var(--mono); font-size: 11px; font-weight: 600;
+    display: grid; place-items: center; flex: 0 0 auto;
+  }
+  .stage:last-child .stage-line { display: none; }
+  .stage-line { width: 1.5px; flex: 1 1 auto; background: var(--rule); min-height: 12px; }
+  .stage-body { grid-column: 2; padding-bottom: 20px; }
+  .stage-name {
+    font-family: var(--display); font-size: 18px; font-weight: 600;
+    line-height: 1.3; margin-bottom: 2px;
+  }
+  .stage-tech {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    letter-spacing: .04em; margin-bottom: 5px;
+  }
+  .stage-body p { margin: 0 0 6px; font-size: 15px; }
+  .stage-out {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    border-left: 2px solid var(--accent-soft); padding-left: 10px; margin-top: 7px;
+  }
+  .stage-out b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---------- figures ---------- */
+  figure {
+    margin: 22px 0; background: var(--surface);
+    border: 1px solid var(--rule); border-radius: 10px;
+    padding: 18px 16px 12px; box-shadow: var(--shadow);
+  }
+  figure .scroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; height: auto; max-width: 100%; min-width: 0; }
+  figcaption {
+    font-size: 13.5px; color: var(--muted); line-height: 1.5;
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule);
+  }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---------- formula block ---------- */
+  .formula {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+    padding: 16px 18px; margin: 18px 0;
+  }
+  .formula .eq {
+    font-family: var(--mono); font-size: 15px; font-weight: 500;
+    color: var(--ink); overflow-x: auto; padding-bottom: 4px;
+  }
+  .formula .why { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+
+  /* ---------- tables ---------- */
+  .table-scroll { overflow-x: auto; margin: 16px 0; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 14.5px;
+    min-width: 440px;
+  }
+  th, td {
+    text-align: left; padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--rule); vertical-align: top;
+  }
+  th {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+    border-bottom-color: var(--rule-strong); white-space: nowrap;
+  }
+  td { color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+  td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- status chips ---------- */
+  .chip {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    font-weight: 600; letter-spacing: .06em; padding: 2px 8px;
+    border-radius: 4px; white-space: nowrap;
+  }
+  .chip-alert   { background: var(--alert-bg);   color: var(--alert); }
+  .chip-warning { background: var(--warning-bg); color: var(--warning); }
+  .chip-drowsy  { background: var(--drowsy-bg);  color: var(--drowsy); }
+
+  /* ---------- callout ---------- */
+  .note {
+    background: var(--surface-2); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 14px 16px; margin: 18px 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note .tag {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--accent);
+    display: block; margin-bottom: 5px;
+  }
+  .note.danger { border-left: 3px solid var(--drowsy); }
+  .note.danger .tag { color: var(--drowsy); }
+
+  /* ---------- two-up ---------- */
+  .two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+  @media (max-width: 640px) { .two-up { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 10px; padding: 15px 16px;
+  }
+  .panel h4 { margin-top: 0; }
+  .panel p:last-child { margin-bottom: 0; }
+  .panel ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14.5px; }
+  .panel li { margin-bottom: 5px; }
+
+  /* ---------- file tree ---------- */
+  .tree {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.85;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 10px; padding: 16px; overflow-x: auto; margin: 16px 0;
+  }
+  .tree .dir { color: var(--accent); font-weight: 600; }
+  .tree .cmt { color: var(--muted); }
+
+  /* ---------- Q&A ---------- */
+  .qa { border-top: 1px solid var(--rule); padding: 16px 0; }
+  .qa:last-child { border-bottom: 1px solid var(--rule); }
+  .qa .q {
+    font-family: var(--display); font-size: 18px; font-weight: 600;
+    color: var(--ink); margin-bottom: 6px; line-height: 1.3;
+  }
+  .qa p:last-child { margin-bottom: 0; }
+
+  footer {
+    border-top: 1px solid var(--rule); margin-top: 34px; padding-top: 20px;
+    font-size: 13.5px; color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap" style="padding-block:0">
+    <div class="eyebrow">Computer Vision · Real-Time Systems</div>
+    <h1>Driver Drowsiness Detection</h1>
+    <p class="standfirst">
+      A live webcam system that detects a driver's face with YOLO, measures eyelid and
+      mouth movement from facial landmarks, and raises an alarm within about a second
+      of a micro-sleep beginning.
+    </p>
+    <dl class="spec-row">
+      <div class="spec"><dt>Detector</dt><dd>YOLO11n <small>face</small></dd></div>
+      <div class="spec"><dt>Landmarks</dt><dd>478 <small>FaceMesh</small></dd></div>
+      <div class="spec"><dt>Throughput</dt><dd>33 <small>FPS · M2</small></dd></div>
+      <div class="spec"><dt>Alarm latency</dt><dd>1.2 <small>seconds</small></dd></div>
+      <div class="spec"><dt>Score inputs</dt><dd>4 <small>channels</small></dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ======================= 1 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">01</div>
+      <div class="sec-title">
+        <h2>The problem, stated precisely</h2>
+        <p>What we are actually measuring, and why it is harder than it sounds.</p>
+      </div>
+    </div>
+
+    <p>
+      Drowsiness is not visible in a single photograph. A frame showing closed eyes could be
+      a blink — something a healthy driver does roughly 15 times a minute — or the first
+      moment of a micro-sleep. The two look <em>identical</em> in one frame. They differ only
+      in how long they last.
+    </p>
+    <p>
+      So the real task is not image classification. It is <strong>measuring a signal over
+      time</strong>: track how open the eyes are on every frame, build a time series, and
+      recognise dangerous patterns in it. That single observation drives the entire
+      architecture below.
+    </p>
+
+    <div class="two-up">
+      <div class="panel">
+        <h4>What a single frame gives us</h4>
+        <ul>
+          <li>Where the face is</li>
+          <li>Where the eyes and mouth are</li>
+          <li>How open they are, as a ratio</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h4>What only time gives us</h4>
+        <ul>
+          <li>Blink vs. micro-sleep (duration)</li>
+          <li>PERCLOS — closure over a minute</li>
+          <li>Blink rate and yawn frequency</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 2 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">02</div>
+      <div class="sec-title">
+        <h2>The processing pipeline</h2>
+        <p>Seven stages, run in order on every single frame. These are numbered because they genuinely are a sequence — each stage consumes the one above it.</p>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">1</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Capture the frame</div>
+        <div class="stage-tech">OpenCV · AVFoundation · background thread</div>
+        <p>
+          The webcam is read on its own thread that keeps only the newest frame. If we read
+          the camera on the main thread, we would drain a queue of stale frames and the
+          display would lag behind reality — dangerous in a safety system.
+        </p>
+        <div class="stage-out"><b>out →</b> 640×480 BGR image</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">2</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Detect faces with YOLO</div>
+        <div class="stage-tech">Ultralytics YOLO11n · fine-tuned on WIDER FACE</div>
+        <p>
+          One forward pass produces every face box with a confidence score. YOLO — "You Only
+          Look Once" — is a single-stage detector, which is precisely why it is fast enough
+          for live video: no region proposals, no second pass.
+        </p>
+        <div class="stage-out"><b>out →</b> face boxes + confidences · ~9&nbsp;ms on Apple M2 GPU</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">3</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Identify the driver</div>
+        <div class="stage-tech">largest-area heuristic</div>
+        <p>
+          With several people in frame we score the <strong>largest</strong> face box. A
+          passenger sitting further back always projects to a smaller box, so this simple
+          rule is both fast and reliable for a camera mounted in a car. Other faces are drawn
+          in grey and labelled <em>passenger</em>.
+        </p>
+        <div class="stage-out"><b>out →</b> one face box = the driver</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">4</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Locate eyes and mouth</div>
+        <div class="stage-tech">MediaPipe FaceMesh · 478 3-D landmarks</div>
+        <p>
+          The face box is cropped (with a 15% margin) and FaceMesh runs on that crop only.
+          Cropping first matters three ways: the eyes occupy far more pixels so landmarks are
+          more precise, there is less image to process, and FaceMesh cannot wander off to a
+          passenger's face — YOLO has already decided who the driver is.
+        </p>
+        <div class="stage-out"><b>out →</b> EAR, MAR, eye boxes, mouth box, head tilt · ~5&nbsp;ms</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">5</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Score the drowsiness</div>
+        <div class="stage-tech">stateful engine · 60-second rolling window</div>
+        <p>
+          The only stage that remembers the past. It runs a small state machine that counts
+          blinks, detects micro-sleeps and yawns, and blends four evidence channels into one
+          0–100 score. Detailed in section 04.
+        </p>
+        <div class="stage-out"><b>out →</b> score, state, blink/yawn counters, PERCLOS</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">6</div><div class="stage-line"></div></div>
+      <div class="stage-body">
+        <div class="stage-name">Render boxes and heatmap</div>
+        <div class="stage-tech">OpenCV drawing · Gaussian attention map</div>
+        <p>
+          Bounding boxes with class labels and confidences, an on-frame HUD, and the attention
+          heatmap — whose intensity is computed from the live EAR and MAR, not painted on.
+        </p>
+        <div class="stage-out"><b>out →</b> annotated frame + standalone heatmap view · ~7&nbsp;ms</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-mark"><div class="stage-dot">7</div></div>
+      <div class="stage-body">
+        <div class="stage-name">Sound the alarm</div>
+        <div class="stage-tech">synthesised WAV · background thread · cooldown</div>
+        <p>
+          If the state is <span class="chip chip-drowsy">DROWSY</span> and has been for long
+          enough, a two-tone siren plays on a background thread so the video never stalls.
+        </p>
+        <div class="stage-out"><b>out →</b> audio, plus a flashing red dashboard banner</div>
+      </div>
+    </div>
+
+    <figure>
+      <h4 style="margin-top:0">Measured cost per frame — Apple M2, 640×480</h4>
+      <div class="scroll">
+        <svg viewBox="0 0 700 132" role="img" aria-label="Bar chart of per-stage processing time. YOLO 9 milliseconds, FaceMesh 5, heatmap 5, drawing 2, capture and other 6. Total 27 milliseconds.">
+          <!-- scale: 0 to 30 ms over x 132..660  => 17.6 px per ms -->
+          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor">
+            <text x="0" y="16" font-size="10" opacity=".6">STAGE</text>
+            <text x="672" y="16" font-size="10" opacity=".6" text-anchor="end">ms</text>
+          </g>
+          <!-- grid -->
+          <g stroke="currentColor" opacity=".16">
+            <line x1="132" y1="24" x2="132" y2="112"/>
+            <line x1="308" y1="24" x2="308" y2="112"/>
+            <line x1="484" y1="24" x2="484" y2="112"/>
+            <line x1="660" y1="24" x2="660" y2="112"/>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".55" text-anchor="middle">
+            <text x="132" y="126">0</text>
+            <text x="308" y="126">10</text>
+            <text x="484" y="126">20</text>
+            <text x="660" y="126">30</text>
+          </g>
+          <!-- bars -->
+          <g font-family="IBM Plex Sans, sans-serif" font-size="11.5" fill="currentColor">
+            <text x="0" y="36">YOLO inference</text>
+            <rect x="132" y="27" width="158.4" height="12" rx="2" fill="#0d7a76"/>
+            <text x="672" y="36" text-anchor="end" font-family="IBM Plex Mono, monospace">9.0</text>
+
+            <text x="0" y="56">FaceMesh</text>
+            <rect x="132" y="47" width="88" height="12" rx="2" fill="#0d7a76" opacity=".78"/>
+            <text x="672" y="56" text-anchor="end" font-family="IBM Plex Mono, monospace">5.0</text>
+
+            <text x="0" y="76">Heatmap</text>
+            <rect x="132" y="67" width="88" height="12" rx="2" fill="#0d7a76" opacity=".58"/>
+            <text x="672" y="76" text-anchor="end" font-family="IBM Plex Mono, monospace">5.0</text>
+
+            <text x="0" y="96">Drawing + HUD</text>
+            <rect x="132" y="87" width="35.2" height="12" rx="2" fill="#0d7a76" opacity=".42"/>
+            <text x="672" y="96" text-anchor="end" font-family="IBM Plex Mono, monospace">2.0</text>
+
+            <text x="0" y="112" font-weight="600">Total</text>
+            <rect x="132" y="104" width="475.2" height="6" rx="2" fill="currentColor" opacity=".35"/>
+            <text x="672" y="112" text-anchor="end" font-family="IBM Plex Mono, monospace" font-weight="600">27.0</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        27&nbsp;ms per frame leaves headroom inside the 33&nbsp;ms budget of a 30&nbsp;FPS camera,
+        so the system runs at the camera's native rate rather than falling behind.
+        <b>Measured, not estimated</b> — the figures come from the project's own timing instrumentation.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ======================= 3 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">03</div>
+      <div class="sec-title">
+        <h2>Eye Aspect Ratio</h2>
+        <p>The core measurement — one number that says how open an eye is.</p>
+      </div>
+    </div>
+
+    <p>
+      A bounding box cannot tell you whether an eye is open, because an open eye and a closed
+      eye occupy almost the same rectangle. To measure eyelid closure you need the eyelid
+      <em>points</em>. FaceMesh gives 478 of them per face, in real time, on the CPU.
+    </p>
+    <p>
+      From those we take six points around each eye and compute the <strong>Eye Aspect
+      Ratio</strong> (Soukupová &amp; Čech, 2016):
+    </p>
+
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 660 200" role="img" aria-label="Diagram of an eye with six landmark points. Points p1 and p4 at the corners define the horizontal width; p2, p3 above and p6, p5 below define two vertical distances.">
+          <!-- eye outline -->
+          <path d="M 90 110 Q 170 44 250 110 Q 170 160 90 110 Z"
+                fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/>
+          <circle cx="170" cy="107" r="21" fill="currentColor" opacity=".16"/>
+          <circle cx="170" cy="107" r="9" fill="currentColor" opacity=".45"/>
+
+          <!-- horizontal measure p1-p4 -->
+          <line x1="90" y1="110" x2="250" y2="110" stroke="#0d7a76" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <!-- vertical measures -->
+          <line x1="143" y1="70" x2="143" y2="140" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <line x1="197" y1="70" x2="197" y2="140" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+          <!-- points -->
+          <g fill="#0d7a76">
+            <circle cx="90" cy="110" r="5"/><circle cx="250" cy="110" r="5"/>
+          </g>
+          <g fill="#b45309">
+            <circle cx="143" cy="70" r="5"/><circle cx="197" cy="70" r="5"/>
+            <circle cx="143" cy="140" r="5"/><circle cx="197" cy="140" r="5"/>
+          </g>
+
+          <!-- labels -->
+          <g font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor">
+            <text x="72" y="130" text-anchor="middle">p1</text>
+            <text x="268" y="130" text-anchor="middle">p4</text>
+            <text x="143" y="60" text-anchor="middle">p2</text>
+            <text x="197" y="60" text-anchor="middle">p3</text>
+            <text x="143" y="158" text-anchor="middle">p6</text>
+            <text x="197" y="158" text-anchor="middle">p5</text>
+          </g>
+
+          <!-- legend -->
+          <g font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="currentColor">
+            <rect x="330" y="56" width="12" height="3" fill="#b45309"/>
+            <text x="352" y="62">vertical — the eyelid gap (numerator)</text>
+            <rect x="330" y="86" width="12" height="3" fill="#0d7a76"/>
+            <text x="352" y="92">horizontal — eye width (denominator)</text>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="12" fill="currentColor" opacity=".75">
+            <text x="330" y="126">open eye  ·  EAR ≈ 0.25 – 0.35</text>
+            <text x="330" y="146">closed    ·  EAR &lt; 0.21</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        The six landmarks are fixed positions in the FaceMesh topology, not values we chose.
+        Indices <code>[33, 160, 158, 133, 153, 144]</code> give the right eye.
+      </figcaption>
+    </figure>
+
+    <div class="formula">
+      <div class="eq">EAR = ( |p2−p6| + |p3−p5| ) / ( 2 · |p1−p4| )</div>
+      <p class="why">
+        <strong>Why divide by the width?</strong> That is the clever part of the formula. It
+        makes EAR <strong>scale-invariant</strong>: when the driver leans toward the camera the
+        eye gets bigger in pixels, but the gap and the width grow together, so the ratio is
+        unchanged. Without the division we would need a per-person, per-distance calibration.
+      </p>
+    </div>
+
+    <h3>Blink or micro-sleep?</h3>
+    <p>
+      Both are "eyes closed", so the signal alone cannot separate them. We separate them by
+      <strong>duration</strong>, measured at the moment the eyes reopen:
+    </p>
+
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 760 270" role="img" aria-label="EAR plotted against time over ten seconds. The signal rests at 0.30 and dips below the 0.21 threshold three times: two brief blinks of about 0.25 seconds, then a long closure of 2.4 seconds which crosses the alarm line at 1.2 seconds.">
+          <defs>
+            <clipPath id="plot"><rect x="60" y="22" width="670" height="192"/></clipPath>
+          </defs>
+
+          <!-- y grid + labels : EAR 0 at y=210, 0.40 at y=30 -->
+          <g stroke="currentColor" opacity=".13">
+            <line x1="60" y1="30"  x2="730" y2="30"/>
+            <line x1="60" y1="75"  x2="730" y2="75"/>
+            <line x1="60" y1="120" x2="730" y2="120"/>
+            <line x1="60" y1="165" x2="730" y2="165"/>
+          </g>
+          <line x1="60" y1="210" x2="730" y2="210" stroke="currentColor" opacity=".4"/>
+          <line x1="60" y1="22"  x2="60"  y2="210" stroke="currentColor" opacity=".4"/>
+
+          <g font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6" text-anchor="end">
+            <text x="52" y="34">0.40</text>
+            <text x="52" y="79">0.30</text>
+            <text x="52" y="124">0.20</text>
+            <text x="52" y="169">0.10</text>
+            <text x="52" y="214">0.00</text>
+          </g>
+          <text x="10" y="120" font-family="IBM Plex Mono, monospace" font-size="10"
+                fill="currentColor" opacity=".6" transform="rotate(-90 14 120)" text-anchor="middle">EAR</text>
+
+          <!-- closed region shading -->
+          <g clip-path="url(#plot)">
+            <rect x="400" y="22" width="161" height="188" fill="#b91c1c" opacity=".09"/>
+          </g>
+
+          <!-- threshold line EAR 0.21 -> y = 210 - (0.21/0.40)*180 = 115.5 -->
+          <line x1="60" y1="115.5" x2="730" y2="115.5" stroke="#b45309" stroke-width="1.5" stroke-dasharray="6 4"/>
+          <text x="66" y="111" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#b45309">
+            EAR threshold 0.21 — below this the eye counts as closed
+          </text>
+
+          <!-- the signal -->
+          <path d="M 60,75 L 160,75 L 170,172 L 178,172 L 188,75
+                   L 294,75 L 304,172 L 312,172 L 322,75
+                   L 395,75 L 405,178 L 556,178 L 566,75 L 730,75"
+                fill="none" stroke="#0d7a76" stroke-width="2.4"
+                stroke-linejoin="round" stroke-linecap="round"/>
+
+          <!-- alarm trigger at 1.2 s into the closure -> t=6.2s -> x=475 -->
+          <line x1="475" y1="22" x2="475" y2="210" stroke="#b91c1c" stroke-width="1.6"/>
+          <circle cx="475" cy="178" r="4.5" fill="#b91c1c"/>
+          <text x="482" y="44" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="#b91c1c">ALARM</text>
+          <text x="482" y="58" font-family="IBM Plex Mono, monospace" font-size="10" fill="#b91c1c">1.2 s of closure</text>
+
+          <!-- annotations -->
+          <g font-family="IBM Plex Sans, sans-serif" font-size="11" fill="currentColor">
+            <text x="179" y="196" text-anchor="middle" opacity=".75">0.25 s</text>
+            <text x="179" y="208" text-anchor="middle" font-weight="600">blink</text>
+            <text x="313" y="196" text-anchor="middle" opacity=".75">0.25 s</text>
+            <text x="313" y="208" text-anchor="middle" font-weight="600">blink</text>
+            <text x="480" y="200" text-anchor="middle" opacity=".75">2.4 s</text>
+            <text x="480" y="212" text-anchor="middle" font-weight="600" fill="#b91c1c">MICRO-SLEEP</text>
+          </g>
+
+          <!-- x axis -->
+          <g font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6" text-anchor="middle">
+            <text x="60"  y="232">0</text>
+            <text x="194" y="232">2</text>
+            <text x="328" y="232">4</text>
+            <text x="462" y="232">6</text>
+            <text x="596" y="232">8</text>
+            <text x="730" y="232">10</text>
+            <text x="395" y="250">time (seconds)</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        The same signal, the same threshold — only <b>duration</b> separates a harmless blink
+        from the event that fires the alarm. This is why a frame-by-frame classifier cannot
+        solve the problem, and why the scoring stage has to be stateful.
+      </figcaption>
+    </figure>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Closure length</th><th>Classified as</th><th>Effect on the system</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="num">≤ 0.40 s</td><td>Normal blink</td><td>Blink counter +1. Score unaffected.</td></tr>
+          <tr><td class="num">0.40 – 1.20 s</td><td>Heavy blink</td><td>Counted as a blink; the closure channel starts rising.</td></tr>
+          <tr><td class="num">≥ 1.20 s</td><td>Micro-sleep</td><td>Forces <span class="chip chip-drowsy">DROWSY</span> immediately and sounds the alarm.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Mouth Aspect Ratio</h3>
+    <p>
+      The same idea applied to the mouth: the average lip gap divided by the mouth width.
+      A yawn is a large <em>sustained</em> MAR, so the mouth must stay open for
+      <strong>0.8 seconds</strong> before it counts. That duration requirement is what stops
+      ordinary talking — which produces short MAR spikes — from being logged as yawning.
+    </p>
+    <div class="formula">
+      <div class="eq">MAR = mean( |p<sub>upper</sub> − p<sub>lower</sub>| ) / |corner<sub>L</sub> − corner<sub>R</sub>|</div>
+      <p class="why">Three vertical lip pairs are averaged, which makes the measure robust to a single noisy landmark.</p>
+    </div>
+  </section>
+
+  <!-- ======================= 4 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">04</div>
+      <div class="sec-title">
+        <h2>The drowsiness score</h2>
+        <p>Four independent channels of evidence, weighted into one number from 0 to 100.</p>
+      </div>
+    </div>
+
+    <p>
+      No single cue is trustworthy on its own. Someone can stare without blinking while
+      perfectly alert; someone can yawn from boredom. So we combine four channels that fail
+      in <em>different</em> ways, which makes the combination far more stable than any one of
+      them.
+    </p>
+
+    <div class="formula">
+      <div class="eq">score = 100 × ( 0.40·PERCLOS + 0.35·closure + 0.15·yawn + 0.10·blink )</div>
+      <p class="why">Each channel is normalised to 0–1 before weighting, so no channel can dominate the others.</p>
+    </div>
+
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 700 148" role="img" aria-label="Stacked bar showing the four score weights: PERCLOS 40 percent, current closure 35 percent, yawn rate 15 percent, blink rate 10 percent.">
+          <!-- bar: x 20..680 = 660 px for 100% -->
+          <rect x="20"  y="28" width="264" height="34" fill="#0d7a76"/>
+          <rect x="284" y="28" width="231" height="34" fill="#0d7a76" opacity=".72"/>
+          <rect x="515" y="28" width="99"  height="34" fill="#b45309" opacity=".85"/>
+          <rect x="614" y="28" width="66"  height="34" fill="#b45309" opacity=".55"/>
+
+          <g font-family="IBM Plex Mono, monospace" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">
+            <text x="152" y="50">40%</text>
+            <text x="399" y="50">35%</text>
+            <text x="564" y="50">15%</text>
+            <text x="647" y="50">10%</text>
+          </g>
+
+          <g font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">
+            <text x="20"  y="82">PERCLOS</text>
+            <text x="284" y="82">Current closure</text>
+            <text x="515" y="82">Yawns</text>
+            <text x="614" y="82">Blinks</text>
+          </g>
+          <g font-family="IBM Plex Sans, sans-serif" font-size="11.5" fill="currentColor" opacity=".62">
+            <text x="20"  y="100">closed time over</text>
+            <text x="20"  y="115">the last 60 s</text>
+            <text x="284" y="100">how long the eyes</text>
+            <text x="284" y="115">are shut right now</text>
+            <text x="515" y="100">per minute</text>
+            <text x="614" y="100">rate outside</text>
+            <text x="614" y="115">8–28 / min</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        The two eye channels carry <b>75%</b> of the weight between them, because eyelid
+        behaviour is the most direct physiological evidence of sleep onset. Yawning and blink
+        rate are slower, earlier, noisier signals — useful, but not decisive.
+      </figcaption>
+    </figure>
+
+    <h3>Why PERCLOS gets the largest single share</h3>
+    <p>
+      PERCLOS is the <strong>percentage of time the eyelids are closed</strong> over a rolling
+      window — here 60 seconds. It is the measure that driver-fatigue research has repeatedly
+      found correlates best with genuine drowsiness, because it captures the gradual
+      lengthening of blinks that precedes sleep, rather than any single dramatic event.
+    </p>
+
+    <h3>Why "current closure" is nearly as heavy</h3>
+    <p>
+      PERCLOS is a 60-second average, so it responds slowly by construction. The closure
+      channel is the opposite: it measures the closure happening <em>right now</em> and can
+      take the score from 0 to alarm in just over a second. PERCLOS catches the slow slide;
+      closure catches the emergency.
+    </p>
+
+    <div class="note danger">
+      <span class="tag">Safety override</span>
+      <p>
+        If the eyes stay closed longer than the micro-sleep threshold, the state becomes
+        <span class="chip chip-drowsy">DROWSY</span> <strong>immediately</strong>, regardless
+        of what the weighted score says. At 100&nbsp;km/h a car travels about 33&nbsp;metres
+        every second — there is no time to wait for a rolling average to catch up. A weighted
+        score is the right tool for gradual fatigue and the wrong tool for an emergency, so
+        the emergency gets its own direct path.
+      </p>
+    </div>
+
+    <h3>Smoothing and the status bands</h3>
+    <p>
+      The raw score is exponentially smoothed — <code>new = 0.25·raw + 0.75·previous</code> —
+      so the reading does not flicker between frames. The smoothed value maps onto three
+      states:
+    </p>
+
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Score</th><th>State</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0 – 39</td><td><span class="chip chip-alert">ALERT</span></td><td>Normal driving. Blinking within the healthy range.</td></tr>
+          <tr><td class="num">40 – 59</td><td><span class="chip chip-warning">WARNING</span></td><td>Early fatigue: longer blinks, occasional yawning.</td></tr>
+          <tr><td class="num">60 – 100</td><td><span class="chip chip-drowsy">DROWSY</span></td><td>Alarm sounds. Sustained closure or a micro-sleep.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ======================= 5 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">05</div>
+      <div class="sec-title">
+        <h2>The attention heatmap</h2>
+        <p>Not decoration — every pixel of intensity is derived from a live measurement.</p>
+      </div>
+    </div>
+
+    <p>
+      The heatmap answers the question "<em>which part of the face is driving the score right
+      now?</em>". We place a two-dimensional Gaussian at each measured region:
+    </p>
+
+    <div class="formula">
+      <div class="eq">G(x, y) = A · exp( −( (x−cx)² / 2σx²  +  (y−cy)² / 2σy² ) )</div>
+      <p class="why">
+        The <strong>amplitude A</strong> comes from the measurements — a lower EAR makes the
+        eyes hotter, a higher MAR makes the mouth hotter, and the overall score drives a broad
+        glow across the whole face. The <strong>width σ</strong> comes from the size of the
+        detected region, so the blob always fits the feature it marks.
+      </p>
+    </div>
+
+    <p>
+      The blobs are summed, normalised, colour-mapped, and blended with a <strong>per-pixel</strong>
+      weight rather than a uniform one. That detail matters: a flat blend would wash out the
+      entire image, whereas weighting by local intensity leaves cold regions perfectly sharp
+      and tints only what is actually hot.
+    </p>
+
+    <h4>Two optimisations worth mentioning</h4>
+    <p>
+      A naïve implementation evaluates the Gaussian over all 307,200 pixels for every blob.
+      Instead we evaluate each blob only within ±3σ of its centre — beyond that a Gaussian
+      contributes under 1% — and we colour-map at half resolution before scaling back up,
+      since a heatmap is smooth by nature. Together these cut the cost from about 6.7&nbsp;ms
+      to 5.2&nbsp;ms per frame, and to 0.2&nbsp;ms when nothing is hot.
+    </p>
+
+    <div class="note">
+      <span class="tag">A fair question to expect</span>
+      <p>
+        <em>"Is this a real attention map, like Grad-CAM?"</em> — No, and it is worth saying so
+        plainly. Grad-CAM derives attention from a network's gradients. This map is built from
+        the <strong>measured</strong> quantities the algorithm actually uses to decide: EAR,
+        MAR and the score. It is an honest visualisation of the decision inputs, which is what
+        a driver-monitoring display needs, but it is not a claim about what the neural network
+        internally attends to.
+      </p>
+    </div>
+  </section>
+
+  <!-- ======================= 6 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">06</div>
+      <div class="sec-title">
+        <h2>The YOLO model</h2>
+        <p>Which weights, why not the stock ones, and how to train a custom five-class detector.</p>
+      </div>
+    </div>
+
+    <h3>Why stock YOLO is not enough</h3>
+    <p>
+      The Ultralytics models everyone starts from — <code>yolov8n.pt</code>,
+      <code>yolo11n.pt</code> — are trained on <strong>COCO</strong>. COCO's 80 classes
+      include <code>person</code>, but there is no <code>face</code>, no <code>eye</code> and
+      no <code>mouth</code>. A stock model physically cannot produce the boxes this project
+      needs, so there are only two honest options: use a checkpoint that was genuinely
+      fine-tuned for faces, or train one.
+    </p>
+
+    <h3>What ships by default</h3>
+    <p>
+      <code>models/yolov11n-face.pt</code> — a real YOLO11n checkpoint fine-tuned on
+      <strong>WIDER FACE</strong> (Apache-2.0, fetched from Hugging Face). It has exactly one
+      class, <code>face</code>. YOLO locates the face; FaceMesh locates the eyes and mouth
+      inside that box from 478 measured landmarks. Nothing is hardcoded — every box is
+      computed from real landmark positions on every frame.
+    </p>
+
+    <h3>The custom five-class model</h3>
+    <p>
+      To have YOLO detect everything natively in a single pass, the project includes a
+      complete training pipeline for five classes:
+    </p>
+
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th class="num">id</th><th>class</th><th>what it marks</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0</td><td>face</td><td>the whole face</td></tr>
+          <tr><td class="num">1</td><td>eye_open</td><td>an open eye</td></tr>
+          <tr><td class="num">2</td><td>eye_closed</td><td>a closed eye</td></tr>
+          <tr><td class="num">3</td><td>mouth_open</td><td>mouth wide open — a yawn</td></tr>
+          <tr><td class="num">4</td><td>mouth_closed</td><td>mouth closed or nearly so</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Auto-labelling: the interesting part</h4>
+    <p>
+      Hand-labelling thousands of boxes would take days. Instead the project uses
+      <strong>weak supervision</strong>: a slow, complex teacher generates the labels for a
+      fast, simple student. The YOLO-face model draws the face box, FaceMesh supplies exact
+      eye and mouth contours, and the same EAR/MAR thresholds the live app uses decide
+      <code>open</code> versus <code>closed</code>. The labels are therefore consistent with
+      the criteria the finished system will be judged by.
+    </p>
+
+    <pre><code>python training/auto_label.py --session normal   --frames 400
+python training/auto_label.py --session eyesshut --frames 300
+python training/auto_label.py --session yawning  --frames 300
+python training/auto_label.py --split      <span class="cmt"># 75 / 15 / 10 split</span>
+python training/train.py --epochs 100 --install</code></pre>
+
+    <p>
+      Labels are written in YOLO's normalised format — <code>class x_center y_center width
+      height</code>, every value between 0 and 1 — so they remain correct at any resolution.
+    </p>
+
+    <div class="note">
+      <span class="tag">A dataset trap we had to design around</span>
+      <p>
+        Frames containing <strong>more than one face</strong> are skipped automatically. We can
+        only measure eyes and mouth for one face per frame, so a second person's eyes would be
+        left unlabelled — and in YOLO training, "unlabelled" means "background". The model
+        would literally be taught that eyes are not eyes. This was caught by inspecting the
+        rendered label previews, which is exactly why the <code>--preview</code> step exists.
+      </p>
+    </div>
+
+    <h4>Transfer learning, not training from scratch</h4>
+    <p>
+      Training starts from <code>yolo11n.pt</code>, which already learned generic visual
+      features — edges, textures, "object-ness" — from COCO's 118,000 images. We re-teach only
+      the final layers. That is why a few thousand of your own frames suffices, where training
+      from random weights would need hundreds of thousands.
+    </p>
+
+    <h4>Augmentation chosen for this domain</h4>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>hsv_v</td><td class="num">0.4</td><td>brightness — day, dusk, tunnel, night</td></tr>
+          <tr><td>degrees</td><td class="num">10</td><td>heads tilt; they do not invert</td></tr>
+          <tr><td>scale</td><td class="num">0.4</td><td>driver sits closer to or further from the camera</td></tr>
+          <tr><td>fliplr</td><td class="num">0.5</td><td>mirroring, so both eyes are learned equally</td></tr>
+          <tr><td>flipud</td><td class="num">0.0</td><td><strong>off</strong> — an upside-down driver is not a real case</td></tr>
+          <tr><td>erasing</td><td class="num">0.2</td><td>random blanked patches mimic sunglasses and occlusion</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Which metric actually matters here</h4>
+    <p>
+      Not overall mAP. For this application the number to defend is <strong>recall on
+      <code>eye_closed</code></strong>. A false alarm is annoying; a missed micro-sleep is a
+      crash. The validation script reports it separately and warns when it falls below 0.90 —
+      because an average across all five classes can look healthy while hiding exactly the
+      failure that matters.
+    </p>
+  </section>
+
+  <!-- ======================= 7 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">07</div>
+      <div class="sec-title">
+        <h2>Engineering decisions</h2>
+        <p>The choices behind the code, and what each one costs.</p>
+      </div>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why YOLO and MediaPipe together, rather than one of them?</div>
+      <p>
+        They solve different problems. YOLO answers <em>where is the face, and how confident
+        am I</em> — it is robust across lighting, angles and distances, and it gives a real
+        confidence score for each detection. FaceMesh answers <em>exactly where are the
+        eyelids</em>, which is what EAR needs and what a box cannot provide. Using either
+        alone would mean giving up something the system genuinely requires.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why crop the face before running FaceMesh?</div>
+      <p>
+        Three reasons at once. <strong>Accuracy:</strong> the eyes occupy far more pixels in a
+        200×200 crop than in a 640×480 frame, so the landmarks are more precise and EAR is
+        less noisy. <strong>Speed:</strong> less image to process. <strong>Correctness:</strong>
+        YOLO has already decided who the driver is, so FaceMesh cannot drift onto a
+        passenger's face.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why read the camera on a background thread?</div>
+      <p>
+        OpenCV buffers frames. If the processing loop is slower than the camera, reading on the
+        main thread drains a queue of increasingly stale images and the display falls behind
+        reality — unacceptable in a safety system. The background thread keeps only the newest
+        frame, so we always process the present moment and simply drop frames we cannot keep up
+        with.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why play the alarm on a separate thread?</div>
+      <p>
+        Playing audio synchronously would freeze the video for the duration of the sound —
+        roughly a second of blindness, at exactly the moment the system has decided the driver
+        is asleep. A background thread plus a cooldown timer keeps the video running while
+        preventing hundreds of overlapping sounds during a sustained alarm.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why synthesise the alarm instead of shipping an audio file?</div>
+      <p>
+        The WAV is generated with NumPy on first run: two tones alternating six times a second,
+        because hearing locks onto <em>changing</em> pitch far more readily than a constant
+        tone. The frequency is integrated to get phase — otherwise the waveform jumps
+        discontinuously at each switch and sounds like static — and a 12&nbsp;ms fade at each
+        end removes the click. It keeps the repository free of binary blobs, and the tone is
+        tunable by editing numbers.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">Why is every threshold in a YAML file?</div>
+      <p>
+        EAR baselines differ between people, and the right threshold depends on the camera, the
+        lighting and the individual. Hardcoding those numbers would make the system tunable only
+        by editing source. The dashboard exposes the main thresholds as live sliders, so it can
+        be calibrated in front of an audience without a restart.
+      </p>
+    </div>
+
+    <div class="qa">
+      <div class="q">What are the honest limitations?</div>
+      <p>
+        Sunglasses defeat EAR entirely — no eyelid landmarks means no measurement. Very low
+        light degrades both YOLO and FaceMesh; an infrared camera is the real-world answer.
+        Extreme head rotation hides one eye. The largest-face heuristic assumes the driver is
+        nearest the camera, which a rear-seat mounting would break. And the thresholds are
+        population defaults, not per-driver calibration — a production system would learn each
+        driver's personal EAR baseline during the first minute of a trip.
+      </p>
+    </div>
+  </section>
+
+  <!-- ======================= 8 ======================= -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">08</div>
+      <div class="sec-title">
+        <h2>Code map</h2>
+        <p>Where each idea in this document actually lives.</p>
+      </div>
+    </div>
+
+    <div class="tree"><span class="dir">DV/</span>
+├── app.py                  <span class="cmt">Streamlit dashboard — the main entry point</span>
+├── run_cli.py              <span class="cmt">OpenCV-window version, same pipeline</span>
+│
+├── <span class="dir">config/</span>config.yaml      <span class="cmt">every threshold and weight</span>
+│
+├── <span class="dir">src/</span>
+│   ├── config.py           <span class="cmt">loads + validates the YAML</span>
+│   ├── camera.py           <span class="cmt">threaded capture, permission errors  → §2.1</span>
+│   ├── detector.py         <span class="cmt">YOLO wrapper, device selection       → §2.2</span>
+│   ├── landmarks.py        <span class="cmt">FaceMesh, EAR and MAR maths          → §3</span>
+│   ├── drowsiness.py       <span class="cmt">the scoring state machine            → §4</span>
+│   ├── heatmap.py          <span class="cmt">Gaussian attention map               → §5</span>
+│   ├── alarm.py            <span class="cmt">tone synthesis + playback            → §2.7</span>
+│   ├── overlay.py          <span class="cmt">boxes, labels, HUD</span>
+│   └── pipeline.py         <span class="cmt">runs all seven stages per frame</span>
+│
+├── <span class="dir">training/</span>
+│   ├── data.yaml           <span class="cmt">5-class dataset definition           → §6</span>
+│   ├── auto_label.py       <span class="cmt">weak-supervision labelling</span>
+│   ├── train.py            <span class="cmt">transfer learning + augmentation</span>
+│   └── validate.py         <span class="cmt">precision / recall / mAP</span>
+│
+├── <span class="dir">tools/</span>download_models.py
+└── <span class="dir">tests/</span>smoke_test.py    <span class="cmt">end-to-end verification</span></div>
+
+    <h3>Running it</h3>
+    <pre><code>python3.11 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements.txt
+python tools/download_models.py
+python tests/smoke_test.py        <span class="cmt"># every line should say PASS</span>
+streamlit run app.py              <span class="cmt"># the webcam starts by itself</span></code></pre>
+
+    <h3>Demonstrating it</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Do this</th><th>Watch for</th></tr></thead>
+        <tbody>
+          <tr><td>Blink normally</td><td>Blink counter rises; score stays low</td></tr>
+          <tr><td>Close your eyes and hold</td><td>Closure timer climbs; heatmap goes red over the eyes</td></tr>
+          <tr><td>Hold past 1.2 seconds</td><td><span class="chip chip-drowsy">DROWSY</span>, red border, alarm sounds</td></tr>
+          <tr><td>Yawn for about a second</td><td>Yawn counter rises; mouth region turns red</td></tr>
+          <tr><td>Talk normally</td><td>Yawn counter does <strong>not</strong> move — the duration test rejects it</td></tr>
+          <tr><td>Step out of frame</td><td><span class="chip chip-alert">NO FACE</span>; score decays; counters preserved</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Built with Ultralytics YOLO11, MediaPipe FaceMesh, OpenCV, PyTorch and Streamlit.
+      Runs on Apple Silicon via the Metal (MPS) backend, on NVIDIA via CUDA, and on CPU
+      everywhere else. Timing figures measured on an Apple M2 at 640×480.
+    </p>
+    <p style="margin-bottom:0">
+      EAR follows Soukupová &amp; Čech, <em>Real-Time Eye Blink Detection using Facial
+      Landmarks</em> (2016). PERCLOS follows the driver-fatigue literature summarised by
+      NHTSA.
+    </p>
+  </footer>
+
+</div>

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Model weights (large binaries - re-download with tools/download_models.py)
+models/*.pt
+models/*.onnx
+
+# Generated at runtime
+assets/alarm.wav
+logs/*.log
+
+# Training artefacts
+training/dataset/
+training/runs/
+training/.data.resolved.yaml
+runs/
+
+# OS
+.DS_Store

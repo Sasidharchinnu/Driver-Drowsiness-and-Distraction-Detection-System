@@ -1,0 +1,41 @@
+# =============================================================================
+# Driver Drowsiness Detection - Python dependencies
+#
+# IMPORTANT: use Python 3.10, 3.11 or 3.12.
+# MediaPipe does not publish wheels for Python 3.13+, so the install will fail
+# on 3.13. Python 3.11 is the safest choice.
+#
+# Install with:
+#   pip install -r requirements.txt
+# =============================================================================
+
+# --- Deep learning -----------------------------------------------------------
+# torch 2.2+ has solid Apple Silicon (MPS) support, which is what makes YOLO
+# run on the M-series GPU instead of the CPU.
+torch>=2.2.0
+torchvision>=0.17.0
+
+# --- YOLO --------------------------------------------------------------------
+# Ultralytics provides the YOLO model, training loop and inference API.
+ultralytics>=8.3.0
+
+# --- Computer vision ---------------------------------------------------------
+opencv-python>=4.9.0
+
+# --- Facial landmarks --------------------------------------------------------
+# Supplies FaceMesh (478 3D points) used for the EAR and MAR calculations.
+mediapipe>=0.10.9
+
+# --- Web dashboard -----------------------------------------------------------
+streamlit>=1.32.0
+
+# --- Support libraries -------------------------------------------------------
+numpy>=1.24.0
+PyYAML>=6.0            # reads config/config.yaml
+huggingface-hub>=0.20.0  # downloads the pretrained YOLO face weights
+pandas>=2.0.0          # used by Streamlit's charting
+
+# --- Optional ----------------------------------------------------------------
+# Only needed for alarm playback on Windows/Linux. macOS uses the built-in
+# `afplay` command and needs nothing extra.
+# pygame>=2.5.0
