@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Driver Alert Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: a single reading column styled like a car's instrument cluster; wide
+   panels (bands, timelines, calculator) break out to the full container. */
+:root {
+  --bg: #f3f6f8;
+  --panel: #ffffff;
+  --ink: #13202a;
+  --muted: #566573;
+  --line: #d9e1e7;
+  --accent: #0b6a87;
+  --accent-soft: #e2f1f6;
+  --ok: #17864a;
+  --ok-soft: #e1f3e8;
+  --warn: #b86f00;
+  --warn-soft: #fbefd9;
+  --bad: #c7362a;
+  --bad-soft: #fbe3e0;
+  --quiet: #e9eef2;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1317; --panel: #131d23; --ink: #e5edf2; --muted: #9aabb8; --line: #263540;
+    --accent: #5cc6e3; --accent-soft: #12303b;
+    --ok: #4cc983; --ok-soft: #10301f; --warn: #f0a93b; --warn-soft: #362611;
+    --bad: #ff7466; --bad-soft: #3a1714; --quiet: #1b2830;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1317; --panel: #131d23; --ink: #e5edf2; --muted: #9aabb8; --line: #263540;
+  --accent: #5cc6e3; --accent-soft: #12303b;
+  --ok: #4cc983; --ok-soft: #10301f; --warn: #f0a93b; --warn-soft: #362611;
+  --bad: #ff7466; --bad-soft: #3a1714; --quiet: #1b2830;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 17px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 0 64px;
+}
+.wrap { max-width: 980px; margin: 0 auto; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.4rem, 6vw, 3.8rem); font-weight: 800; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.7rem, 3.6vw, 2.3rem); font-weight: 700; }
+h3 { font-size: 1.3rem; font-weight: 700; }
+p { margin: 0; }
+.eyebrow {
+  font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent); font-weight: 600;
+}
+.muted { color: var(--muted); }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+code, .kbd { font-family: var(--font-data); font-size: 0.88em; background: var(--quiet);
+  padding: 0.05em 0.35em; border-radius: 4px; }
+section { display: grid; gap: 20px; padding-block: 44px; border-top: 1px solid var(--line); }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- header ---------- */
+header { display: grid; gap: 18px; padding-block: 48px 36px; }
+header .lede { font-size: 1.15rem; max-width: 62ch; }
+.states { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 8px; }
+.state {
+  display: grid; gap: 6px; padding: 16px 18px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line);
+}
+.state .pill {
+  justify-self: start; font-family: var(--font-display); font-weight: 800; font-size: 1.05rem;
+  letter-spacing: 0.06em; padding: 2px 12px; border-radius: 999px; color: #fff;
+}
+.state .range { font-family: var(--font-data); font-size: 0.9rem; color: var(--muted); }
+.pill.ok { background: var(--ok); } .pill.warn { background: var(--warn); }
+.pill.bad { background: var(--bad); } .pill.none { background: var(--muted); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .state .pill { color: #0c1317; } }
+:root[data-theme="dark"] .state .pill { color: #0c1317; }
+
+/* ---------- score band ---------- */
+.band-wrap { overflow-x: auto; }
+.band { min-width: 520px; display: grid; gap: 8px; }
+.band-bar { display: flex; height: 54px; border-radius: 10px; overflow: hidden; gap: 2px; background: var(--bg); }
+.band-bar > div { display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; letter-spacing: 0.06em; font-size: 1.1rem; }
+.seg-ok { flex: 40; background: var(--ok-soft); color: var(--ok); }
+.seg-warn { flex: 20; background: var(--warn-soft); color: var(--warn); }
+.seg-bad { flex: 40; background: var(--bad-soft); color: var(--bad); }
+.band-ticks { position: relative; height: 22px; font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); }
+.band-ticks span { position: absolute; transform: translateX(-50%); }
+.band-ticks span:first-child { transform: none; }
+.band-ticks span:last-child { transform: translateX(-100%); }
+.note { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start;
+  background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; }
+.note b.tag { font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent); padding-top: 3px; }
+
+/* ---------- what it watches ---------- */
+.watch { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.figure { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+.figure svg { width: 100%; height: auto; display: block; }
+.figure .formula { font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); }
+.readings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.reading { background: var(--quiet); border-radius: 8px; padding: 8px 10px; }
+.reading .k { font-size: 0.78rem; color: var(--muted); }
+.reading .v { font-family: var(--font-data); font-weight: 600; font-size: 1.05rem; }
+
+/* ---------- ingredients ---------- */
+.recipe { display: grid; gap: 10px; }
+.ing { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.ing .pts { display: grid; gap: 2px; text-align: center; }
+.ing .pts .big { font-family: var(--font-display); font-weight: 800; font-size: 2.4rem; line-height: 1; color: var(--accent); }
+.ing .pts .small { font-size: 0.75rem; color: var(--muted); }
+.ing .body { display: grid; gap: 6px; min-width: 0; }
+.ing .example { font-size: 0.93rem; color: var(--muted); }
+.meter { height: 8px; border-radius: 4px; background: var(--quiet); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+@media (max-width: 520px) { .ing { grid-template-columns: 1fr; } .ing .pts { text-align: left; grid-auto-flow: column; justify-content: start; align-items: baseline; gap: 8px; } }
+
+/* ---------- timelines ---------- */
+.timeline { display: grid; gap: 8px; }
+.tl-wrap { overflow-x: auto; }
+.tl { min-width: 560px; display: grid; gap: 6px; }
+.tl-bar { display: flex; gap: 2px; height: 64px; }
+.tl-bar > div { display: grid; align-content: center; padding: 0 10px; border-radius: 8px; font-size: 0.88rem; line-height: 1.25; }
+.tl-bar b { font-family: var(--font-display); font-size: 1.05rem; letter-spacing: 0.03em; }
+.z-ok { background: var(--ok-soft); color: var(--ok); }
+.z-warn { background: var(--warn-soft); color: var(--warn); }
+.z-bad { background: var(--bad-soft); color: var(--bad); }
+.z-quiet { background: var(--quiet); color: var(--muted); }
+.tl-ticks { position: relative; height: 20px; font-family: var(--font-data); font-size: 0.8rem; color: var(--muted); }
+.tl-ticks span { position: absolute; transform: translateX(-50%); }
+.tl-ticks span:first-child { transform: none; }
+
+/* ---------- calculator ---------- */
+.calc { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+@media (max-width: 760px) { .calc { grid-template-columns: 1fr; padding: 16px; } }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.presets button {
+  font: inherit; font-size: 0.9rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.presets button:hover { border-color: var(--accent); color: var(--accent); }
+.presets button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.controls { display: grid; gap: 16px; min-width: 0; }
+.control { display: grid; gap: 4px; }
+.control label { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; font-size: 0.95rem; }
+.control label output { font-family: var(--font-data); font-weight: 600; color: var(--accent); white-space: nowrap; }
+.control small { color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.result { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.gauge { max-width: 340px; width: 100%; justify-self: center; }
+.gauge text { font-family: var(--font-data); fill: var(--muted); font-size: 10px; }
+.verdict { display: grid; gap: 6px; text-align: center; }
+.verdict .pill { justify-self: center; font-family: var(--font-display); font-weight: 800; font-size: 1.5rem;
+  letter-spacing: 0.08em; padding: 4px 22px; border-radius: 999px; color: #fff; transition: background 0.25s; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .verdict .pill { color: #0c1317; } }
+:root[data-theme="dark"] .verdict .pill { color: #0c1317; }
+.verdict .why { font-size: 0.95rem; }
+.breakdown { display: grid; gap: 6px; font-size: 0.88rem; }
+.breakdown .row { display: grid; grid-template-columns: 1fr 120px 44px; gap: 10px; align-items: center; }
+.breakdown .row .num { text-align: right; }
+.breakdown .total { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 700; }
+
+/* ---------- not / alarm / glossary ---------- */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+ul.clean { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+ul.clean li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+.mark { font-family: var(--font-data); font-weight: 600; text-align: center; border-radius: 50%; width: 22px; height: 22px; line-height: 22px; font-size: 0.8rem; margin-top: 2px; }
+.mark.ok { background: var(--ok-soft); color: var(--ok); }
+.mark.bad { background: var(--bad-soft); color: var(--bad); }
+.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.steps li::before { content: counter(s); font-family: var(--font-display); font-weight: 800; font-size: 1.2rem;
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+dl.gloss { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 10px 22px; margin: 0; }
+dl.gloss dt { font-family: var(--font-data); font-weight: 600; color: var(--accent); }
+dl.gloss dd { margin: 0; }
+@media (max-width: 520px) { dl.gloss { grid-template-columns: 1fr; gap: 2px; } dl.gloss dd { margin-bottom: 10px; } }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 0.93rem; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0.05em; padding: 1px 10px; border-radius: 999px; color: #fff; font-size: 0.9rem; white-space: nowrap; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) td .pill { color: #0c1317; } }
+:root[data-theme="dark"] td .pill { color: #0c1317; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Driver Drowsiness Detection · user guide</span>
+  <h1>Why did the alarm go off?</h1>
+  <p class="lede">The app watches your eyes and mouth through the webcam and turns what it sees into a
+  <b>drowsiness score from 0 to 100</b>. The score decides which of three colours you see. This page explains,
+  in plain words, exactly what raises the score and what sets off the alarm.</p>
+  <div class="states">
+    <div class="state"><span class="pill ok">ALERT</span><span class="range">score 0 – 39</span><span>You look awake. Nothing to do.</span></div>
+    <div class="state"><span class="pill warn">WARNING</span><span class="range">score 40 – 59</span><span>Early signs of tiredness. No sound yet.</span></div>
+    <div class="state"><span class="pill bad">DROWSY</span><span class="range">score 60 – 100</span><span>Danger. The alarm sounds.</span></div>
+    <div class="state"><span class="pill none">NO FACE</span><span class="range">no score</span><span>The camera can't see your face.</span></div>
+  </div>
+</header>
+
+<section aria-labelledby="s-score">
+  <span class="eyebrow">The score</span>
+  <h2 id="s-score">One number, three zones</h2>
+  <p class="prose">Think of the score like a fuel gauge for tiredness. It sits near 0 while you drive normally and climbs when your
+  eyes stay shut too long or you yawn. The two lines that matter are <b class="num">40</b> and <b class="num">60</b>.</p>
+  <div class="band-wrap">
+    <div class="band" role="img" aria-label="Score scale: 0 to 39 is ALERT, 40 to 59 is WARNING, 60 to 100 is DROWSY">
+      <div class="band-bar"><div class="seg-ok">ALERT</div><div class="seg-warn">WARNING</div><div class="seg-bad">DROWSY + ALARM</div></div>
+      <div class="band-ticks"><span style="left:0">0</span><span style="left:40%">40</span><span style="left:60%">60</span><span style="left:100%">100</span></div>
+    </div>
+  </div>
+  <div class="note prose"><b class="tag">Why it doesn't flicker</b>
+    <p>Once you are in WARNING, the score has to fall below <b class="num">34</b> before you go back to ALERT. Once in DROWSY, it
+    has to fall below <b class="num">54</b>. Without this gap, a score of 39.9 → 40.1 → 39.9 would flash the colours back and forth.</p></div>
+</section>
+
+<section aria-labelledby="s-watch">
+  <span class="eyebrow">What the camera measures</span>
+  <h2 id="s-watch">Two measurements: eye opening and mouth opening</h2>
+  <p class="prose">First a face detector (YOLO) finds your face. Then a landmark model (MediaPipe FaceMesh) places 478 points on it.
+  From those points the app measures two simple ratios, about 30 times per second.</p>
+  <div class="watch">
+    <div class="figure">
+      <h3>Eyes: EAR (eye aspect ratio)</h3>
+      <svg viewBox="0 0 320 120" role="img" aria-label="An open eye is tall, EAR about 0.30. A closed eye is flat, EAR about 0.08.">
+        <g fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ink)">
+          <path d="M20 60 Q75 15 130 60 Q75 105 20 60 Z" fill="var(--quiet)"/>
+          <circle cx="75" cy="60" r="16" fill="var(--accent)" stroke="none"/>
+          <path d="M190 60 Q245 52 300 60 Q245 68 190 60 Z" fill="var(--quiet)"/>
+        </g>
+        <g stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 3">
+          <line x1="75" y1="38" x2="75" y2="82"/><line x1="20" y1="60" x2="130" y2="60"/>
+          <line x1="245" y1="56" x2="245" y2="64"/>
+        </g>
+        <text x="75" y="112" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--ok)">open · 0.30</text>
+        <text x="245" y="96" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--bad)">closed · 0.08</text>
+      </svg>
+      <p class="formula">EAR = eye height ÷ eye width</p>
+      <p>A tall, open eye gives a big number. A closed eye is flat, so the number drops toward 0. The eye counts as
+      <b>closed</b> when EAR falls below the threshold.</p>
+      <div class="readings">
+        <div class="reading"><div class="k">Threshold</div><div class="v">72% of yours</div></div>
+        <div class="reading"><div class="k">Before calibration</div><div class="v">0.21</div></div>
+      </div>
+      <p class="muted" style="font-size:0.9rem">Everyone's eyes are different, so in the first second or two the app learns how open
+      <i>your</i> eyes normally are and sets the threshold from that. A ✓ appears on the Eyes card once it has.</p>
+    </div>
+    <div class="figure">
+      <h3>Mouth: MAR (mouth aspect ratio)</h3>
+      <svg viewBox="0 0 320 120" role="img" aria-label="A closed mouth has MAR near 0.02. A yawn has MAR around 0.7.">
+        <g stroke="var(--ink)" stroke-width="2">
+          <path d="M25 60 Q75 50 125 60 Q75 70 25 60 Z" fill="var(--quiet)"/>
+          <path d="M200 60 Q245 10 290 60 Q245 115 200 60 Z" fill="var(--quiet)"/>
+        </g>
+        <g stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 3">
+          <line x1="245" y1="36" x2="245" y2="86"/><line x1="200" y1="60" x2="290" y2="60"/>
+        </g>
+        <text x="75" y="96" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--ok)">closed · 0.02</text>
+        <text x="245" y="112" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--bad)">yawn · 0.70</text>
+      </svg>
+      <p class="formula">MAR = lip gap ÷ mouth width</p>
+      <p>Same idea for the mouth. Talking gives small, fast ups and downs. A yawn is a big opening that stays open.
+      The mouth counts as <b>wide open</b> above <b class="num">0.45</b>.</p>
+      <div class="readings">
+        <div class="reading"><div class="k">Wide open above</div><div class="v">0.45</div></div>
+        <div class="reading"><div class="k">Normal talking</div><div class="v">0.10 – 0.35</div></div>
+      </div>
+      <p class="muted" style="font-size:0.9rem">You can see both live numbers on the Eyes and Mouth cards in the app.</p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="s-instant">
+  <span class="eyebrow">The fast rules</span>
+  <h2 id="s-instant">Two things that trigger an alert by the clock</h2>
+  <p class="prose">Most of the time the score builds up slowly. But two situations are timed directly with a stopwatch,
+  because waiting would be dangerous. These are the alerts you will see most often.</p>
+
+  <div class="timeline">
+    <h3>1 · How long your eyes stay closed</h3>
+    <div class="tl-wrap"><div class="tl" role="img" aria-label="Eyes closed: under 0.4 seconds is a normal blink; 0.4 to 1.2 seconds is a slow blink that adds points; 1.2 seconds or more is a microsleep and the alarm sounds immediately.">
+      <div class="tl-bar">
+        <div class="z-ok" style="flex:0.4"><b>Blink</b>harmless</div>
+        <div class="z-warn" style="flex:0.8"><b>Slow blink</b>adds up to 35 points</div>
+        <div class="z-bad" style="flex:0.8"><b>Microsleep</b>DROWSY + alarm instantly</div>
+      </div>
+      <div class="tl-ticks"><span style="left:0">0 s</span><span style="left:20%">0.4 s</span><span style="left:60%">1.2 s</span><span style="left:96%">2 s</span></div>
+    </div></div>
+  </div>
+
+  <div class="timeline">
+    <h3>2 · How long your mouth stays wide open</h3>
+    <div class="tl-wrap"><div class="tl" role="img" aria-label="Mouth wide open: under 1.2 seconds is ignored; 1.2 to 2.5 seconds counts as a yawn and shows WARNING; 2.5 seconds or more is DROWSY and the alarm sounds.">
+      <div class="tl-bar">
+        <div class="z-quiet" style="flex:1.2"><b>Ignored</b>talking, a laugh</div>
+        <div class="z-warn" style="flex:1.3"><b>Yawn</b>WARNING</div>
+        <div class="z-bad" style="flex:1"><b>Long yawn</b>DROWSY + alarm</div>
+      </div>
+      <div class="tl-ticks"><span style="left:0">0 s</span><span style="left:34.3%">1.2 s</span><span style="left:71.4%">2.5 s</span><span style="left:96%">3.5 s</span></div>
+    </div></div>
+  </div>
+
+  <div class="note prose"><b class="tag">Good to know</b>
+    <p>Your eyes naturally squeeze shut during a yawn. The app knows this and does <b>not</b> count eye closure while your mouth
+    is wide open, so a yawn never sets off the microsleep alarm by accident.</p></div>
+</section>
+
+<section aria-labelledby="s-recipe">
+  <span class="eyebrow">Where the points come from</span>
+  <h2 id="s-recipe">The score is made of four ingredients</h2>
+  <p class="prose">Every frame, the app adds up four ingredients. Each one has a maximum, and together they can reach 100.
+  The score then glides toward the new total over a fraction of a second, so one bad frame cannot spike it.</p>
+  <div class="recipe">
+    <div class="ing">
+      <div class="pts"><span class="big num">40</span><span class="small">points max</span></div>
+      <div class="body">
+        <h3>Closed-eye time in the last minute <span class="muted" style="font-weight:400">(PERCLOS)</span></h3>
+        <div class="meter" aria-hidden="true"><i style="width:100%"></i></div>
+        <p>The share of the last 60 seconds your eyes spent in closures <b>longer than a blink</b>. At
+        <b class="num">20%</b> (12 seconds out of 60) it reaches the full 40 points.</p>
+        <p class="example">Example: four slow 1-second blinks in a minute = 4 s = 6.7% → 13 points.</p>
+      </div>
+    </div>
+    <div class="ing">
+      <div class="pts"><span class="big num">35</span><span class="small">points max</span></div>
+      <div class="body">
+        <h3>How long your eyes are closed right now</h3>
+        <div class="meter" aria-hidden="true"><i style="width:87.5%"></i></div>
+        <p>Zero for the first <b class="num">0.4 s</b> (a normal blink), then rising steadily to 35 points at <b class="num">1.2 s</b>.
+        At 1.2 s the microsleep rule above takes over anyway.</p>
+        <p class="example">Example: eyes shut for 0.8 s → halfway → 17.5 points.</p>
+      </div>
+    </div>
+    <div class="ing">
+      <div class="pts"><span class="big num">15</span><span class="small">points max</span></div>
+      <div class="body">
+        <h3>Yawns in the last minute</h3>
+        <div class="meter" aria-hidden="true"><i style="width:37.5%"></i></div>
+        <p>1 yawn = <b class="num">3.75</b>, 2 yawns = <b class="num">9</b>, 3 or more = <b class="num">15</b> points, plus
+        <b class="num">3</b> while you are yawning. On top of this, a yawn in progress or 3 yawns in a minute always lift the score
+        into WARNING.</p>
+        <p class="example">One yawn is normal. Several in a minute is a strong sign of tiredness.</p>
+      </div>
+    </div>
+    <div class="ing">
+      <div class="pts"><span class="big num">10</span><span class="small">points max</span></div>
+      <div class="body">
+        <h3>Unusual blink rate</h3>
+        <div class="meter" aria-hidden="true"><i style="width:25%"></i></div>
+        <p>Healthy is <b class="num">8 – 28</b> blinks per minute and adds nothing. Blinking much less (staring) or much more (fighting
+        sleep) adds up to 10 points. Only checked after the first <b class="num">30 s</b>, when there is enough data.</p>
+        <p class="example">Example: 4 blinks per minute → half the way to zero → 5 points.</p>
+      </div>
+    </div>
+  </div>
+  <div class="note prose"><b class="tag">The key point</b>
+    <p>Normal blinking adds <b>0 points</b> to every ingredient. Only closures longer than 0.4 s, yawns, and an unusual blink
+    rate move the score.</p></div>
+</section>
+
+<section aria-labelledby="s-calc">
+  <span class="eyebrow">Try it yourself</span>
+  <h2 id="s-calc">Score calculator</h2>
+  <p class="prose">Move the sliders, or pick a situation, to see the score and colour the app would show. It uses the same
+  rules and numbers as the app.</p>
+  <div class="calc">
+    <div class="presets" role="group" aria-label="Example situations">
+      <button type="button" data-p="normal">Normal driving</button>
+      <button type="button" data-p="slow">Slow blink</button>
+      <button type="button" data-p="micro">Microsleep</button>
+      <button type="button" data-p="yawn">One yawn</button>
+      <button type="button" data-p="long">Long yawn</button>
+      <button type="button" data-p="tired">Tired for a while</button>
+    </div>
+    <div class="controls">
+      <div class="control">
+        <label for="c-closed">Eyes closed right now <output id="o-closed" for="c-closed"></output></label>
+        <input type="range" id="c-closed" min="0" max="2" step="0.1" value="0">
+        <small>0.1 – 0.3 s is a normal blink.</small>
+      </div>
+      <div class="control">
+        <label for="c-perclos">Slow-blink time in the last minute <output id="o-perclos" for="c-perclos"></output></label>
+        <input type="range" id="c-perclos" min="0" max="20" step="1" value="0">
+        <small>Seconds spent in closures longer than 0.4 s. 12 s or more = full 40 points.</small>
+      </div>
+      <div class="control">
+        <label for="c-mouth">Mouth wide open right now <output id="o-mouth" for="c-mouth"></output></label>
+        <input type="range" id="c-mouth" min="0" max="4" step="0.1" value="0">
+        <small>Yawn from 1.2 s, alarm from 2.5 s.</small>
+      </div>
+      <div class="control">
+        <label for="c-yawns">Earlier yawns in the last minute <output id="o-yawns" for="c-yawns"></output></label>
+        <input type="range" id="c-yawns" min="0" max="5" step="1" value="0">
+        <small>Not counting a yawn happening right now.</small>
+      </div>
+      <div class="control">
+        <label for="c-blink">Blinks per minute <output id="o-blink" for="c-blink"></output></label>
+        <input type="range" id="c-blink" min="0" max="50" step="1" value="15">
+        <small>8 – 28 is normal.</small>
+      </div>
+    </div>
+    <div class="result" aria-live="polite">
+      <svg class="gauge" viewBox="0 0 220 128" role="img" aria-labelledby="g-label">
+        <title id="g-label">Score gauge</title>
+        <g id="g-arcs"></g>
+        <line id="g-needle" x1="110" y1="110" x2="110" y2="34" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"
+          style="transform-origin:110px 110px;transition:transform 0.35s ease"/>
+        <circle cx="110" cy="110" r="6" fill="var(--ink)"/>
+        <text x="16" y="124" text-anchor="middle">0</text>
+        <text x="204" y="124" text-anchor="middle">100</text>
+      </svg>
+      <div class="verdict">
+        <div><span class="num" id="r-score" style="font-size:2.4rem;font-weight:600">0</span><span class="muted"> / 100</span></div>
+        <span class="pill" id="r-pill">ALERT</span>
+        <p class="why" id="r-why"></p>
+      </div>
+      <div class="breakdown" id="r-breakdown"></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="s-table">
+  <span class="eyebrow">Quick reference</span>
+  <h2 id="s-table">Situations and what you'll see</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>What you do</th><th>Status</th><th>Alarm?</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Blink normally</td><td><span class="pill" style="background:var(--ok)">ALERT</span></td><td>No</td><td>Closures under 0.4 s add 0 points.</td></tr>
+        <tr><td>Talk or laugh</td><td><span class="pill" style="background:var(--ok)">ALERT</span></td><td>No</td><td>The mouth isn't held wide open for 1.2 s.</td></tr>
+        <tr><td>Close eyes for 0.8 s</td><td><span class="pill" style="background:var(--ok)">ALERT</span></td><td>No</td><td>About 17 points, then it fades once the eyes open.</td></tr>
+        <tr><td>Close eyes for 1.2 s or more</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes, instantly</td><td>Microsleep rule.</td></tr>
+        <tr><td>Yawn (mouth open 1.2 – 2.5 s)</td><td><span class="pill" style="background:var(--warn)">WARNING</span></td><td>No</td><td>A yawn is an early tiredness sign.</td></tr>
+        <tr><td>Keep mouth open 2.5 s or more</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes, instantly</td><td>Long yawn rule.</td></tr>
+        <tr><td>Yawn 3 times within a minute</td><td><span class="pill" style="background:var(--warn)">WARNING</span></td><td>No</td><td>Frequent yawning.</td></tr>
+        <tr><td>Many slow blinks over a minute</td><td><span class="pill" style="background:var(--warn)">WARNING</span> → <span class="pill" style="background:var(--bad)">DROWSY</span></td><td>When it reaches 60</td><td>Closed-eye time builds up the score.</td></tr>
+        <tr><td>Turn away from the camera</td><td><span class="pill" style="background:var(--muted)">NO FACE</span></td><td>No</td><td>Nothing is measured; the score slowly fades.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="s-alarm">
+  <span class="eyebrow">The alarm</span>
+  <h2 id="s-alarm">When the sound actually plays</h2>
+  <div class="two">
+    <ol class="steps">
+      <li><p>The status must be <b>DROWSY</b>. WARNING never makes a sound; it only changes the colour.</p></li>
+      <li><p>For a microsleep or a long yawn, the alarm plays <b>immediately</b>. For DROWSY reached through the score, it must last
+      <b class="num">0.6 s</b> first, so a single glitchy frame can't set it off.</p></li>
+      <li><p>After it plays, it waits at least <b class="num">3 s</b> before it can play again, so it doesn't stack up.</p></li>
+    </ol>
+    <div class="figure">
+      <h3>Where you hear it</h3>
+      <p>When you run the app on your own computer, the alarm plays through that computer's speakers. When the app runs on a
+      server, choose <b>This browser</b> in the sidebar under <i>Alarm</i>. Use <b>Test alarm</b> to check the volume.</p>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="s-tune">
+  <span class="eyebrow">Adjusting it</span>
+  <h2 id="s-tune">If it doesn't fit your face</h2>
+  <div class="two">
+    <ul class="clean">
+      <li><span class="mark bad">!</span><p><b>Yawns are missed:</b> open your mouth wide and read MAR on the Mouth card. Set
+      <i>Yawn above (MAR)</i> a little below that number.</p></li>
+      <li><span class="mark bad">!</span><p><b>Alarm on a long yawn feels too quick or too slow:</b> change
+      <i>Alarm when mouth open for (s)</i> (default 2.5 s).</p></li>
+    </ul>
+    <ul class="clean">
+      <li><span class="mark ok">✓</span><p><b>Blinks flagged as closed:</b> keep <i>Auto-calibrate to my eyes</i> on and look
+      normally at the camera for two seconds after pressing Start.</p></li>
+      <li><span class="mark ok">✓</span><p><b>Microsleep alarm too sensitive:</b> raise <i>Micro-sleep after (s)</i> above 1.2 s.</p></li>
+    </ul>
+  </div>
+  <p class="muted prose">All of these are in the sidebar and take effect immediately. The defaults live in <code>config/config.yaml</code>.</p>
+</section>
+
+<section aria-labelledby="s-gloss">
+  <span class="eyebrow">Words used in the app</span>
+  <h2 id="s-gloss">Glossary</h2>
+  <dl class="gloss">
+    <dt>EAR</dt><dd>Eye aspect ratio. Eye height divided by eye width. Small means closed.</dd>
+    <dt>MAR</dt><dd>Mouth aspect ratio. Lip gap divided by mouth width. Large means wide open.</dd>
+    <dt>PERCLOS</dt><dd>"Percentage of eye closure": the share of the last minute your eyes spent in closures longer than a blink.
+      Road-safety research uses it as one of the best tiredness measures.</dd>
+    <dt>Microsleep</dt><dd>Falling asleep for a second or two without noticing. At 100 km/h a car travels about 33 metres in one second.</dd>
+    <dt>Calibration</dt><dd>The app learning how open your eyes normally are, so the "closed" line fits you.</dd>
+    <dt>YOLO</dt><dd>The face detector. It finds where your face is in each camera frame.</dd>
+    <dt>FaceMesh</dt><dd>Google's MediaPipe model that places 478 points on the face, including the eyelids and lips.</dd>
+  </dl>
+</section>
+
+</div>
+
+<script>
+(() => {
+  // Same numbers as config/config.yaml and src/drowsiness.py.
+  const W = { perclos: 40, closure: 35, yawn: 15, blink: 10 };
+  const WARN = 40, DROWSY = 60, BLINK_MAX = 0.4, MICRO = 1.2, YAWN_MIN = 1.2, YAWN_ALARM = 2.5;
+
+  const $ = (id) => document.getElementById(id);
+  const inputs = { closed: $("c-closed"), perclos: $("c-perclos"), mouth: $("c-mouth"), yawns: $("c-yawns"), blink: $("c-blink") };
+
+  // Gauge arcs: score s maps to an angle from 180° (left) to 0° (right).
+  const pt = (s, r) => {
+    const a = Math.PI * (1 - s / 100);
+    return [110 + r * Math.cos(a), 110 - r * Math.sin(a)];
+  };
+  const arc = (a, b, color) => {
+    const [x1, y1] = pt(a, 88), [x2, y2] = pt(b, 88);
+    return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A88 88 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="16"/>`;
+  };
+  $("g-arcs").innerHTML = arc(0, 39.4, "var(--ok)") + arc(40.6, 59.4, "var(--warn)") + arc(60.6, 100, "var(--bad)");
+
+  const presets = {
+    normal: { closed: 0.1, perclos: 0, mouth: 0, yawns: 0, blink: 15 },
+    slow:   { closed: 0.8, perclos: 2, mouth: 0, yawns: 0, blink: 15 },
+    micro:  { closed: 1.4, perclos: 3, mouth: 0, yawns: 0, blink: 12 },
+    yawn:   { closed: 0, perclos: 0, mouth: 1.8, yawns: 0, blink: 15 },
+    long:   { closed: 0, perclos: 0, mouth: 2.7, yawns: 0, blink: 15 },
+    tired:  { closed: 0.6, perclos: 7, mouth: 0, yawns: 2, blink: 5 },
+  };
+
+  function compute(v) {
+    const yawning = v.mouth >= YAWN_MIN;
+    const mouthWide = v.mouth > 0.3;           // eyes are ignored while the mouth is wide open
+    const closed = mouthWide ? 0 : v.closed;
+    const recent = v.yawns + (yawning ? 1 : 0);
+
+    const c = {
+      perclos: Math.min(1, ((v.perclos + (closed > BLINK_MAX ? closed : 0)) / 60) / 0.20),
+      closure: closed <= BLINK_MAX ? 0 : Math.min(1, (closed - BLINK_MAX) / (MICRO - BLINK_MAX)),
+      yawn: Math.min(1, ({ 0: 0, 1: 0.25, 2: 0.6 }[recent] ?? 1) + (yawning ? 0.2 : 0)),
+      blink: v.blink < 8 ? Math.min(1, (8 - v.blink) / 8) : v.blink > 28 ? Math.min(1, (v.blink - 28) / 28) : 0,
+    };
+    const parts = Object.fromEntries(Object.keys(W).map((k) => [k, c[k] * W[k]]));
+    let score = Object.values(parts).reduce((a, b) => a + b, 0);
+
+    let floor = 0, floorWhy = "";
+    if (recent >= 3) { floor = WARN + 2; floorWhy = "3 or more yawns in the last minute"; }
+    if (yawning) {
+      const p = Math.min(1, (v.mouth - YAWN_MIN) / (YAWN_ALARM - YAWN_MIN));
+      const f = WARN + 2 + (DROWSY - 2 - WARN - 2) * p;
+      if (f > floor) { floor = f; floorWhy = "a yawn is in progress"; }
+    }
+    const lifted = floor > score;
+    score = Math.min(100, Math.max(score, floor));
+
+    let state, why;
+    if (closed >= MICRO) {
+      state = "DROWSY"; score = Math.max(score, DROWSY); why = `Eyes closed ${closed.toFixed(1)} s: microsleep, the alarm sounds immediately.`;
+    } else if (yawning && v.mouth >= YAWN_ALARM) {
+      state = "DROWSY"; score = Math.max(score, DROWSY); why = `Mouth open ${v.mouth.toFixed(1)} s: long yawn, the alarm sounds immediately.`;
+    } else if (score >= DROWSY) {
+      state = "DROWSY"; why = "The score is 60 or more. The alarm sounds after 0.6 s.";
+    } else if (score >= WARN) {
+      state = "WARNING"; why = lifted ? `WARNING because ${floorWhy}. No sound.` : "The score is between 40 and 59. No sound yet.";
+    } else {
+      state = "ALERT"; why = closed > 0 && closed <= BLINK_MAX ? "That's a normal blink. It adds nothing." : "All normal.";
+    }
+    if (mouthWide && v.closed > 0) why += " Eye closure is ignored while the mouth is wide open.";
+    return { score, state, why, parts, lifted, floor };
+  }
+
+  const fmt = { closed: (x) => `${(+x).toFixed(1)} s`, perclos: (x) => `${x} s`, mouth: (x) => `${(+x).toFixed(1)} s`,
+                yawns: (x) => `${x}`, blink: (x) => `${x} / min` };
+  const color = { ALERT: "var(--ok)", WARNING: "var(--warn)", DROWSY: "var(--bad)" };
+  const names = { perclos: "Closed-eye time", closure: "Eyes closed now", yawn: "Yawns", blink: "Blink rate" };
+
+  function render() {
+    const v = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, parseFloat(el.value)]));
+    for (const k in inputs) $("o-" + k).textContent = fmt[k](inputs[k].value);
+    const r = compute(v);
+    $("r-score").textContent = Math.round(r.score);
+    $("r-pill").textContent = r.state;
+    $("r-pill").style.background = color[r.state];
+    $("r-why").textContent = r.why;
+    $("g-needle").style.transform = `rotate(${(r.score / 100) * 180 - 90}deg)`;
+    let rows = Object.keys(W).map((k) => {
+      const pct = (r.parts[k] / W[k]) * 100;
+      return `<div class="row"><span>${names[k]}</span><span class="meter"><i style="width:${pct}%"></i></span><span class="num">${r.parts[k].toFixed(1)}</span></div>`;
+    }).join("");
+    if (r.lifted) rows += `<div class="row"><span>Yawn lift to WARNING</span><span></span><span class="num">↑${Math.round(r.floor)}</span></div>`;
+    rows += `<div class="row total"><span>Score</span><span></span><span class="num">${Math.round(r.score)}</span></div>`;
+    $("r-breakdown").innerHTML = rows;
+  }
+
+  for (const el of Object.values(inputs)) el.addEventListener("input", () => {
+    document.querySelectorAll(".presets button").forEach((b) => b.setAttribute("aria-pressed", "false"));
+    render();
+  });
+  document.querySelectorAll(".presets button").forEach((b) => b.addEventListener("click", () => {
+    const p = presets[b.dataset.p];
+    for (const k in p) inputs[k].value = p[k];
+    document.querySelectorAll(".presets button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+  }));
+  document.querySelector('[data-p="normal"]').click();
+})();
+</script>
+
+</body>
+</html>

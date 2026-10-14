@@ -27,7 +27,10 @@ opencv-python>=4.9.0
 mediapipe>=0.10.9
 
 # --- Web dashboard -----------------------------------------------------------
-streamlit>=1.32.0
+streamlit>=1.50.0
+# Streams the browser's webcam into Python and the annotated video back.
+streamlit-webrtc>=0.62.0
+plotly>=5.20.0         # gauge and timeline charts
 
 # --- Support libraries -------------------------------------------------------
 numpy>=1.24.0

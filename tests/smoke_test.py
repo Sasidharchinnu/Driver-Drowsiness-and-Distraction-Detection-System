@@ -8,7 +8,7 @@ It checks, in order:
   4. the alarm sound exists / can be generated
   5. the webcam opens and delivers frames
   6. the full pipeline processes real frames at a usable frame rate
-  7. the Streamlit dashboard script runs top to bottom without errors
+  7. the Streamlit dashboard renders its live panels without errors
 
 Run it with:
     python tests/smoke_test.py
@@ -33,6 +33,35 @@ def check(name: str, ok: bool, detail: str = "") -> bool:
     if not ok:
         failures.append(name)
     return ok
+
+
+def _dashboard_with_fake_camera(project_root: str) -> None:
+    """Run app.py with the WebRTC widget replaced by a stub.
+
+    The real widget needs a browser, which the test harness does not have, so
+    the stub pushes a few synthetic frames through the app's video processor
+    and reports the stream as playing. Every live panel then renders.
+    """
+    import os
+    import runpy
+    import types
+
+    import av
+    import numpy as np
+    import streamlit_webrtc
+
+    def fake_streamer(**kwargs):
+        processor = kwargs["video_processor_factory"]()
+        frame = av.VideoFrame.from_ndarray(np.full((480, 640, 3), 120, np.uint8), format="bgr24")
+        for _ in range(8):
+            processor.recv(frame)
+        return types.SimpleNamespace(
+            state=types.SimpleNamespace(playing=True), video_processor=processor
+        )
+
+    streamlit_webrtc.webrtc_streamer = fake_streamer
+    os.chdir(project_root)
+    runpy.run_path(os.path.join(project_root, "app.py"), run_name="__main__")
 
 
 def main() -> int:
@@ -129,15 +158,13 @@ def main() -> int:
     try:
         from streamlit.testing.v1 import AppTest
 
-        os.environ["DROWSINESS_MAX_FRAMES"] = "12"   # stop the live loop quickly
-        app = AppTest.from_file(str(PROJECT_ROOT / "app.py"), default_timeout=120)
+        app = AppTest.from_function(_dashboard_with_fake_camera, default_timeout=180,
+                                    args=(str(PROJECT_ROOT),))
         app.run()
         check("app.py runs without exceptions", not app.exception,
               str(app.exception[0].value)[:120] if app.exception else "")
     except ImportError:
         check("streamlit testing harness available", False, "streamlit too old")
-    finally:
-        os.environ.pop("DROWSINESS_MAX_FRAMES", None)
 
     # summary ----------------------------------------------------------------
     print("\n" + "=" * 52)

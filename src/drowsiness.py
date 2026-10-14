@@ -10,12 +10,12 @@ machine that remembers what happened over the last minute.
 Four independent evidence channels
 ----------------------------------
 1. PERCLOS (40%)  - the fraction of time the eyes were closed over a rolling
-                    60 s window. This is the measure NHTSA studies found
-                    correlates best with real driver fatigue.
+                    60 s window. Only closures LONGER than a normal blink are
+                    counted, so ordinary blinking never raises it.
 2. CLOSURE (35%)  - how long the eyes are closed RIGHT NOW. This is what
                     catches a microsleep in progress, and it is the channel
                     that can raise the alarm within ~1 second.
-3. YAWN (15%)     - yawns per minute. A slower, earlier warning sign.
+3. YAWN (15%)     - yawns in the last minute. A slower, earlier warning sign.
 4. BLINK (10%)    - blink rate outside the normal 8-28 per minute range.
                     Both unusually slow AND unusually fast blinking correlate
                     with fatigue.
@@ -24,14 +24,42 @@ score = 100 * (0.40*perclos + 0.35*closure + 0.15*yawn + 0.10*blink)
 
 Each channel is normalised to 0-1 before weighting, so no single channel can
 dominate. The final score is exponentially smoothed to stop it flickering
-between frames.
+between frames, and the state bands use hysteresis so the label does not
+bounce between ALERT and WARNING when the score sits on a boundary.
+
+Making blinks harmless
+----------------------
+* Personal calibration: everyone's open-eye EAR is different (0.22 for some
+  people, 0.35 for others), so a single fixed threshold misfires. The engine
+  tracks this driver's open-eye EAR over the last 30 s and sets "closed" at a
+  fraction of it. The configured ear_threshold is used until enough data
+  has been collected, and as the fallback when calibration is switched off.
+* Hysteresis: an eye counts as closed below the threshold, but must rise a
+  little ABOVE it to count as open again, so landmark jitter cannot invent
+  extra blinks.
+* Rates and PERCLOS are measured over at least 30 s, so two blinks in the
+  first few seconds of a session cannot look like a fatigue pattern.
 
 Blink vs microsleep
 -------------------
-Both are "eyes closed". We tell them apart by DURATION, measured when the eyes
-reopen:
+Both are "eyes closed". We tell them apart by DURATION:
     closure <= 0.40 s  -> normal blink   (counted, harmless)
     closure >= 1.20 s  -> microsleep     (dangerous, forces DROWSY immediately)
+
+Yawns
+-----
+A yawn is a strong, visible fatigue sign, so it escalates the state directly
+instead of only adding its 15% share to the score:
+    yawn in progress (mouth wide > yawn_min_duration)  -> at least WARNING
+    mouth held wide open for yawn_alarm_duration (2.5 s) -> DROWSY + alarm
+    3 or more yawns within the last minute             -> at least WARNING
+The score is raised to match, so the gauge and the state always agree.
+
+A yawn starts when MAR rises above mar_threshold and ends only when it falls
+clearly below it (hysteresis) for longer than a short grace period. Brief
+dips, or FaceMesh losing the face for a moment while the head tilts back, do
+not cut the yawn short. Eyes naturally squeeze shut during a yawn, so eye
+closure is not scored while a yawn is in progress.
 """
 
 from __future__ import annotations
@@ -41,6 +69,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Deque, Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 class DrowsinessState(str, Enum):
@@ -76,6 +106,11 @@ class DrowsinessMetrics:
     face_detected: bool = False
     face_count: int = 0
     alarm_active: bool = False
+    # True when DROWSY comes from an event that is already time-qualified (a
+    # microsleep or a long yawn), so the alarm may sound without extra delay.
+    urgent: bool = False
+    ear_threshold: float = 0.0         # the threshold actually used this frame
+    calibrated: bool = False           # True once the personal threshold is active
     # How much each channel contributed, 0-1. Displayed as bars in the dashboard
     # and reused to weight the attention heatmap.
     contributions: Dict[str, float] = field(default_factory=dict)
@@ -83,6 +118,26 @@ class DrowsinessMetrics:
 
 class DrowsinessEngine:
     """Stateful analyser. Call `update()` once per frame."""
+
+    # Rates and PERCLOS are never computed over less data than this, so the
+    # first seconds of a session cannot produce inflated numbers.
+    MIN_RATE_WINDOW = 30.0
+    # Blink rate is only judged once this much data exists.
+    BLINK_RATE_WARMUP = 30.0
+    # Personal EAR calibration.
+    CALIBRATION_WINDOW = 30.0          # s of open-eye samples kept
+    CALIBRATION_MIN_SAMPLES = 45       # ~1.5 s at 30 FPS before it switches on
+    CALIBRATION_PERCENTILE = 80        # "typical open eye" = 80th percentile
+    EYE_REOPEN_MARGIN = 0.02           # hysteresis: reopen above threshold + this
+    # Yawn hysteresis: once started, the yawn lasts until MAR drops below this
+    # fraction of the threshold for longer than the grace period.
+    YAWN_RELEASE_RATIO = 0.80
+    YAWN_GRACE = 0.40                  # s
+    # MAR is smoothed before yawn detection: talking makes MAR swing up and
+    # down several times a second and averages out low, a yawn stays high.
+    MAR_SMOOTHING = 0.15
+    # State hysteresis: leave a band only when the score is this far below it.
+    STATE_HYSTERESIS = 6.0
 
     def __init__(self, cfg):
         """`cfg` is the `drowsiness` section of config.yaml."""
@@ -99,6 +154,10 @@ class DrowsinessEngine:
         self.smoothing = float(cfg.score_smoothing)
         self.blink_rate_min = float(cfg.normal_blink_rate_min)
         self.blink_rate_max = float(cfg.normal_blink_rate_max)
+        self.yawn_alarm_duration = float(cfg.get("yawn_alarm_duration", 2.5))
+        self.frequent_yawns = int(cfg.get("frequent_yawns", 3))
+        self.auto_calibrate = bool(cfg.get("auto_calibrate", True))
+        self.ear_closed_ratio = float(cfg.get("ear_closed_ratio", 0.72))
 
         weights = cfg.weights
         self.weights = {
@@ -115,14 +174,21 @@ class DrowsinessEngine:
         """Clear all history. Called at session start and by the Reset button."""
         self.session_start = time.time()
 
-        # (timestamp, is_closed) samples inside the rolling PERCLOS window
-        self._closure_samples: Deque[Tuple[float, bool]] = deque()
+        # Closures longer than a blink, as (start, end) intervals, for PERCLOS.
+        self._long_closures: Deque[Tuple[float, float]] = deque()
         self._blink_times: Deque[float] = deque()
         self._yawn_times: Deque[float] = deque()
+        self._open_ear_samples: Deque[Tuple[float, float]] = deque()
 
+        self._eye_closed = False         # hysteresis state of the eyes
         self._closed_frames = 0          # consecutive frames under the EAR threshold
         self._closure_start: Optional[float] = None
+
         self._yawn_start: Optional[float] = None
+        self._mouth_last_open = 0.0
+        self._smoothed_mar = 0.0
+        self._raw_open_since: Optional[float] = None   # when the mouth really opened
+        self._raw_last_high = 0.0
         self._counted_current_yawn = False
 
         self.blink_count = 0
@@ -131,8 +197,33 @@ class DrowsinessEngine:
         self.longest_closure = 0.0
 
         self._smoothed_score = 0.0
-        self._last_state = DrowsinessState.NO_FACE
+        self._last_state = DrowsinessState.ALERT
         self.history: List[Tuple[float, float]] = []  # (elapsed_seconds, score) for the chart
+
+    @property
+    def recent_yawns(self) -> int:
+        """Yawns inside the rolling window (the last minute)."""
+        return len(self._yawn_times)
+
+    # ------------------------------------------------------- calibration
+    @property
+    def calibrated(self) -> bool:
+        return self.auto_calibrate and len(self._open_ear_samples) >= self.CALIBRATION_MIN_SAMPLES
+
+    @property
+    def active_ear_threshold(self) -> float:
+        """The EAR below which an eye counts as closed for THIS driver."""
+        if not self.calibrated:
+            return self.ear_threshold
+        baseline = float(np.percentile([e for _, e in self._open_ear_samples],
+                                       self.CALIBRATION_PERCENTILE))
+        return float(np.clip(baseline * self.ear_closed_ratio, 0.12, 0.30))
+
+    def _record_open_ear(self, ear: float, now: float) -> None:
+        self._open_ear_samples.append((now, ear))
+        cutoff = now - self.CALIBRATION_WINDOW
+        while self._open_ear_samples and self._open_ear_samples[0][0] < cutoff:
+            self._open_ear_samples.popleft()
 
     # ----------------------------------------------------------------- update
     def update(
@@ -146,6 +237,7 @@ class DrowsinessEngine:
     ) -> DrowsinessMetrics:
         """Feed one frame of measurements in, get the current assessment out."""
         now = now if now is not None else time.time()
+        threshold = self.active_ear_threshold
 
         # ---- No face: do not accumulate evidence, but do not lose history ----
         if not face_detected or ear is None:
@@ -153,10 +245,13 @@ class DrowsinessEngine:
             # cannot claim the eyes are shut.
             self._closure_start = None
             self._closed_frames = 0
-            self._yawn_start = None
-            self._counted_current_yawn = False
+            self._eye_closed = False
+            # A yawn survives a brief loss (head tilted back); a long one ends it.
+            if self._yawn_start is not None and now - self._mouth_last_open > self.YAWN_GRACE * 2:
+                self._end_yawn()
             # Decay the score toward zero so a stale DROWSY does not stick.
             self._smoothed_score *= 0.95
+            self._last_state = DrowsinessState.ALERT
             return DrowsinessMetrics(
                 state=DrowsinessState.NO_FACE,
                 score=self._smoothed_score,
@@ -168,15 +263,30 @@ class DrowsinessEngine:
                 face_detected=False,
                 face_count=face_count,
                 perclos=self._perclos(now),
+                ear_threshold=threshold,
+                calibrated=self.calibrated,
                 contributions={},
             )
 
         mar = mar or 0.0
 
+        # ------------------------------------- MOUTH: yawn detection ---------
+        # Checked first, because a yawn changes how we read the eyes.
+        is_yawning, yawn_duration = self._update_yawn(mar, now)
+        mouth_wide = self._yawn_start is not None
+
         # ------------------------- EYES: closure, blinks, microsleeps --------
-        eye_is_closed_now = ear < self.ear_threshold
-        self._closure_samples.append((now, eye_is_closed_now))
-        self._trim(self._closure_samples, now)
+        if self._eye_closed:
+            raw_closed = ear < threshold + self.EYE_REOPEN_MARGIN
+        else:
+            raw_closed = ear < threshold
+        self._eye_closed = raw_closed
+
+        # Eyes squeeze shut during a yawn - that is the yawn, not sleep.
+        eye_is_closed_now = raw_closed and not mouth_wide
+
+        if not raw_closed and not mouth_wide:
+            self._record_open_ear(ear, now)
 
         closure_duration = 0.0
         if eye_is_closed_now:
@@ -188,60 +298,32 @@ class DrowsinessEngine:
             if self._closure_start is not None:
                 closure_duration = now - self._closure_start
                 self.longest_closure = max(self.longest_closure, closure_duration)
-        else:
-            # The eyes just reopened: classify the closure that ended.
-            if self._closure_start is not None:
-                duration = now - self._closure_start
-                if duration <= self.blink_max_duration:
-                    self.blink_count += 1
-                    self._blink_times.append(now)
-                elif duration >= self.microsleep_duration:
-                    self.microsleep_count += 1
-                else:
-                    # Between a blink and a microsleep: a slow, heavy blink.
-                    # Still counted as a blink, because it is one.
-                    self.blink_count += 1
-                    self._blink_times.append(now)
+        elif raw_closed:
+            # Eyes shut because of a yawn: drop the closure without scoring it.
             self._closure_start = None
             self._closed_frames = 0
-
-        self._trim(self._blink_times, now)
-
-        # ------------------------------------- MOUTH: yawn detection ---------
-        is_yawning = False
-        yawn_duration = 0.0
-        if mar > self.mar_threshold:
-            if self._yawn_start is None:
-                self._yawn_start = now
-                self._counted_current_yawn = False
-            yawn_duration = now - self._yawn_start
-            # Only a mouth held open long enough counts - this rejects talking.
-            if yawn_duration >= self.yawn_min_duration:
-                is_yawning = True
-                if not self._counted_current_yawn:
-                    self.yawn_count += 1
-                    self._yawn_times.append(now)
-                    self._counted_current_yawn = True
         else:
-            self._yawn_start = None
-            self._counted_current_yawn = False
+            self._finish_closure(now)
 
-        self._trim(self._yawn_times, now)
+        self._trim_times(self._blink_times, now)
+        self._trim_times(self._yawn_times, now)
+        self._trim_intervals(now)
 
         # ------------------------------------------ SCORE: four channels -----
-        perclos = self._perclos(now)
-        window_minutes = max(self._elapsed_window(now) / 60.0, 1e-6)
-        blink_rate = len(self._blink_times) / window_minutes
-        yawn_rate = len(self._yawn_times) / window_minutes
+        perclos = self._perclos(now, ongoing=closure_duration)
+        rate_minutes = self._rate_window(now) / 60.0
+        blink_rate = len(self._blink_times) / rate_minutes
+        yawn_rate = len(self._yawn_times) / rate_minutes
 
         contributions = {
             "perclos": self._perclos_contribution(perclos),
             "closure": self._closure_contribution(closure_duration),
-            "yawn": self._yawn_contribution(yawn_rate, is_yawning),
+            "yawn": self._yawn_contribution(len(self._yawn_times), is_yawning),
             "blink": self._blink_contribution(blink_rate, now),
         }
 
         raw_score = 100.0 * sum(self.weights[k] * v for k, v in contributions.items())
+        raw_score = max(raw_score, self._yawn_score_floor(is_yawning, yawn_duration))
         raw_score = max(0.0, min(100.0, raw_score))
 
         # Exponential smoothing: new = a*raw + (1-a)*old.
@@ -251,7 +333,10 @@ class DrowsinessEngine:
         )
 
         # ------------------------------------------------ decide the state ---
-        state = self._classify(self._smoothed_score, closure_duration)
+        long_yawn = is_yawning and yawn_duration >= self.yawn_alarm_duration
+        urgent = closure_duration >= self.microsleep_duration or long_yawn
+        state = DrowsinessState.DROWSY if urgent else self._classify(
+            self._smoothed_score, closure_duration)
 
         self.history.append((now - self.session_start, self._smoothed_score))
         if len(self.history) > 3000:          # keep memory bounded (~2-3 minutes)
@@ -264,7 +349,7 @@ class DrowsinessEngine:
             raw_score=raw_score,
             ear=ear,
             mar=mar,
-            eyes_closed=eye_is_closed_now,
+            eyes_closed=raw_closed,
             closure_duration=closure_duration,
             longest_closure=self.longest_closure,
             blink_count=self.blink_count,
@@ -279,15 +364,78 @@ class DrowsinessEngine:
             face_detected=True,
             face_count=face_count,
             alarm_active=state == DrowsinessState.DROWSY,
+            urgent=urgent,
+            ear_threshold=threshold,
+            calibrated=self.calibrated,
             contributions=contributions,
         )
 
+    # ------------------------------------------------------- eyes & mouth
+    def _finish_closure(self, now: float) -> None:
+        """The eyes just reopened: classify the closure that ended."""
+        if self._closure_start is not None:
+            duration = now - self._closure_start
+            if duration >= self.microsleep_duration:
+                self.microsleep_count += 1
+            else:
+                # Normal blinks and slow, heavy blinks both count as blinks.
+                self.blink_count += 1
+                self._blink_times.append(now)
+            if duration > self.blink_max_duration:
+                self._long_closures.append((self._closure_start, now))
+        self._closure_start = None
+        self._closed_frames = 0
+
+    def _update_yawn(self, mar: float, now: float) -> Tuple[bool, float]:
+        """Hysteresis yawn tracker. Returns (is_yawning, yawn_duration).
+
+        Detection uses the smoothed MAR (rejects talking), but the duration is
+        timed from the moment the raw MAR first went high, so the smoothing
+        lag does not delay the alarm.
+        """
+        if mar > self.mar_threshold:
+            if self._raw_open_since is None:
+                self._raw_open_since = now
+            self._raw_last_high = now
+        elif (self._raw_open_since is not None and self._yawn_start is None
+              and now - self._raw_last_high > self.YAWN_GRACE):
+            self._raw_open_since = None
+
+        self._smoothed_mar += self.MAR_SMOOTHING * (mar - self._smoothed_mar)
+        mar = self._smoothed_mar
+        if self._yawn_start is None:
+            if mar > self.mar_threshold:
+                self._yawn_start = self._raw_open_since or now
+                self._mouth_last_open = now
+                self._counted_current_yawn = False
+        else:
+            if mar > self.mar_threshold * self.YAWN_RELEASE_RATIO:
+                self._mouth_last_open = now
+            elif now - self._mouth_last_open > self.YAWN_GRACE:
+                self._end_yawn()
+
+        if self._yawn_start is None:
+            return False, 0.0
+
+        # Time the yawn up to the last frame the mouth was really open, so the
+        # grace period after it closes cannot stretch a 2.4 s yawn past 2.5 s.
+        duration = max(0.0, self._raw_last_high - self._yawn_start)
+        # Only a mouth held open long enough counts - this rejects talking.
+        is_yawning = duration >= self.yawn_min_duration
+        if is_yawning and not self._counted_current_yawn:
+            self.yawn_count += 1
+            self._yawn_times.append(now)
+            self._counted_current_yawn = True
+        return is_yawning, duration
+
+    def _end_yawn(self) -> None:
+        self._yawn_start = None
+        self._raw_open_since = None
+        self._counted_current_yawn = False
+
     # ------------------------------------------------------- score channels
     def _perclos_contribution(self, perclos: float) -> float:
-        """PERCLOS scaled so that hitting the threshold (20%) gives a full 1.0.
-
-        Below the threshold it rises linearly, so mild closure still registers.
-        """
+        """PERCLOS scaled so that hitting the threshold (20%) gives a full 1.0."""
         return min(1.0, perclos / max(self.perclos_threshold, 1e-6))
 
     def _closure_contribution(self, closure_duration: float) -> float:
@@ -301,18 +449,39 @@ class DrowsinessEngine:
         span = max(self.microsleep_duration - self.blink_max_duration, 1e-6)
         return min(1.0, (closure_duration - self.blink_max_duration) / span)
 
-    def _yawn_contribution(self, yawn_rate: float, is_yawning: bool) -> float:
-        """3 yawns per minute saturates the channel; yawning right now adds 0.3."""
-        rate_part = min(1.0, yawn_rate / 3.0)
-        return min(1.0, rate_part + (0.3 if is_yawning else 0.0))
+    def _yawn_contribution(self, recent_yawns: int, is_yawning: bool) -> float:
+        """One yawn is normal; repeated yawning in the last minute is the signal.
+
+        1 yawn -> 0.25, 2 -> 0.6, 3+ -> 1.0. Yawning right now adds 0.2.
+        """
+        levels = {0: 0.0, 1: 0.25, 2: 0.6}
+        rate_part = levels.get(recent_yawns, 1.0)
+        return min(1.0, rate_part + (0.2 if is_yawning else 0.0))
+
+    def _yawn_score_floor(self, is_yawning: bool, yawn_duration: float) -> float:
+        """Minimum score implied by yawning (see "Yawns" in the module docstring).
+
+        While the mouth is held open the floor climbs from the WARNING line at
+        yawn_min_duration to just below the DROWSY line; crossing into DROWSY is
+        left to the exact yawn_alarm_duration rule in update().
+        """
+        floor = 0.0
+        if len(self._yawn_times) >= self.frequent_yawns:
+            floor = self.warning_score + 2.0
+        if is_yawning:
+            span = max(self.yawn_alarm_duration - self.yawn_min_duration, 1e-6)
+            progress = min(1.0, (yawn_duration - self.yawn_min_duration) / span)
+            top = self.drowsy_score - 2.0
+            floor = max(floor, self.warning_score + 2.0 + (top - self.warning_score - 2.0) * progress)
+        return floor
 
     def _blink_contribution(self, blink_rate: float, now: float) -> float:
         """How far the blink rate sits outside the healthy 8-28/min band.
 
-        We stay silent for the first 15 seconds: with only a few seconds of data
-        the rate estimate is meaningless and would produce a false alarm.
+        Silent for the first 30 seconds: with less data the rate estimate is
+        meaningless and would produce a false alarm.
         """
-        if now - self.session_start < 15.0:
+        if now - self.session_start < self.BLINK_RATE_WARMUP:
             return 0.0
         if self.blink_rate_min <= blink_rate <= self.blink_rate_max:
             return 0.0
@@ -324,7 +493,7 @@ class DrowsinessEngine:
 
     # ------------------------------------------------------------- helpers
     def _classify(self, score: float, closure_duration: float) -> DrowsinessState:
-        """Map the score to a state, with one safety override.
+        """Map the score to a state, with hysteresis and one safety override.
 
         Override: if the eyes have been shut longer than microsleep_duration we
         declare DROWSY immediately, no matter what the smoothed score says.
@@ -333,38 +502,49 @@ class DrowsinessEngine:
         """
         if closure_duration >= self.microsleep_duration:
             return DrowsinessState.DROWSY
-        if score >= self.drowsy_score:
+
+        last = self._last_state
+        drowsy_at = self.drowsy_score
+        warning_at = self.warning_score
+        # Once in a band, stay there until the score is clearly below it.
+        if last == DrowsinessState.DROWSY:
+            drowsy_at -= self.STATE_HYSTERESIS
+        if last in (DrowsinessState.DROWSY, DrowsinessState.WARNING):
+            warning_at -= self.STATE_HYSTERESIS
+
+        if score >= drowsy_at:
             return DrowsinessState.DROWSY
-        if score >= self.warning_score:
+        if score >= warning_at:
             return DrowsinessState.WARNING
         return DrowsinessState.ALERT
 
-    def _perclos(self, now: float) -> float:
-        """PERCLOS = closed samples / total samples inside the rolling window."""
-        self._trim(self._closure_samples, now)
-        if not self._closure_samples:
-            return 0.0
-        closed = sum(1 for _, is_closed in self._closure_samples if is_closed)
-        return closed / len(self._closure_samples)
+    def _rate_window(self, now: float) -> float:
+        """Seconds of data to divide by: what we have, but at least 30 s.
 
-    def _elapsed_window(self, now: float) -> float:
-        """Length of data we actually have, capped at the window size.
-
-        Early in a session we have only a few seconds. Dividing counts by the
-        full 60 s would understate the rate, so we divide by what we really have.
+        Using the real elapsed time early on would turn 2 blinks in 3 seconds
+        into "40 blinks per minute".
         """
-        return min(now - self.session_start, self.perclos_window)
+        elapsed = now - self.session_start
+        return max(min(elapsed, self.perclos_window), self.MIN_RATE_WINDOW)
 
-    def _trim(self, buffer: Deque, now: float) -> None:
-        """Drop samples that fell out of the rolling window."""
+    def _perclos(self, now: float, ongoing: float = 0.0) -> float:
+        """Share of the window spent in closures longer than a blink."""
         cutoff = now - self.perclos_window
-        while buffer:
-            item = buffer[0]
-            timestamp = item[0] if isinstance(item, tuple) else item
-            if timestamp < cutoff:
-                buffer.popleft()
-            else:
-                break
+        closed = sum(end - max(start, cutoff) for start, end in self._long_closures)
+        if ongoing > self.blink_max_duration:
+            closed += ongoing
+        return min(1.0, closed / self._rate_window(now))
+
+    def _trim_times(self, buffer: Deque[float], now: float) -> None:
+        """Drop timestamps that fell out of the rolling window."""
+        cutoff = now - self.perclos_window
+        while buffer and buffer[0] < cutoff:
+            buffer.popleft()
+
+    def _trim_intervals(self, now: float) -> None:
+        cutoff = now - self.perclos_window
+        while self._long_closures and self._long_closures[0][1] < cutoff:
+            self._long_closures.popleft()
 
     # --------------------------------------------------------------- summary
     def session_summary(self) -> Dict[str, float]:

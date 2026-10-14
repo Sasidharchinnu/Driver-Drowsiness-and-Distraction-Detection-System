@@ -238,8 +238,9 @@ class DrowsinessPipeline:
                 left_eye_box, right_eye_box, mouth_box,
                 ear_value, mar_value,
             )
-            heatmap_view = self.heatmap.standalone_view(attention, raw_frame)
-            frame = self.heatmap.overlay(frame, attention)
+            colored = self.heatmap.colorize(attention)   # shared by both views
+            heatmap_view = self.heatmap.standalone_view(attention, raw_frame, colored)
+            frame = self.heatmap.overlay(frame, attention, colored)
 
         # ---- [6] drawing ---------------------------------------------------
         if self.cfg.ui.show_boxes:
@@ -264,7 +265,9 @@ class DrowsinessPipeline:
             frame = draw_hud(frame, metrics, fps)
 
         # ---- [7] alarm -----------------------------------------------------
-        alarm_fired = self.alarm.update(metrics.state == DrowsinessState.DROWSY)
+        alarm_fired = self.alarm.update(
+            metrics.state == DrowsinessState.DROWSY, immediate=metrics.urgent
+        )
 
         self.frames_processed += 1
         return FrameResult(
@@ -387,7 +390,7 @@ class DrowsinessPipeline:
         """Convert the current measurements into heatmap intensities."""
         eye_boxes = [left_eye_box, right_eye_box]
         eye_intensity = (
-            intensity_from_ear(ear_value, self.engine.ear_threshold)
+            intensity_from_ear(ear_value, self.engine.active_ear_threshold)
             if ear_value is not None else 0.0
         )
         mouth_intensity = (

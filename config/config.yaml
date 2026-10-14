@@ -32,14 +32,18 @@ landmarks:
 
 drowsiness:
   # ---- Eye Aspect Ratio (EAR) ----
-  ear_threshold: 0.21          # below this, the eye counts as CLOSED
+  ear_threshold: 0.21          # below this, the eye counts as CLOSED (until calibrated)
+  auto_calibrate: true         # learn this driver's open-eye EAR and adapt the threshold
+  ear_closed_ratio: 0.72       # calibrated: closed = EAR below 72% of the open-eye EAR
   ear_consec_frames: 2         # frames below threshold before we trust it
   blink_max_duration: 0.40     # s. A closure shorter than this is a normal blink.
   microsleep_duration: 1.20    # s. A closure longer than this is a microsleep.
 
   # ---- Mouth Aspect Ratio (MAR) ----
-  mar_threshold: 0.60          # above this, the mouth counts as wide open
-  yawn_min_duration: 0.80      # s. Mouth must stay open this long to be a yawn.
+  mar_threshold: 0.45          # above this, the mouth counts as wide open
+  yawn_min_duration: 1.20      # s. Mouth must stay open this long to be a yawn (-> WARNING).
+  yawn_alarm_duration: 2.5     # s. Mouth held wide open this long -> DROWSY + alarm.
+  frequent_yawns: 3            # this many yawns within a minute -> WARNING.
 
   # ---- PERCLOS (percentage of eyelid closure over time) ----
   perclos_window: 60.0         # s. Rolling window used for PERCLOS and rates.

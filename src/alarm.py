@@ -144,7 +144,9 @@ class AlarmSystem:
         return None
 
     # --------------------------------------------------------------- control
-    def update(self, is_drowsy: bool, now: Optional[float] = None) -> bool:
+    def update(
+        self, is_drowsy: bool, now: Optional[float] = None, immediate: bool = False
+    ) -> bool:
         """Call once per frame with the current DROWSY flag.
 
         Returns True if an alarm was actually fired on this frame.
@@ -153,6 +155,9 @@ class AlarmSystem:
           * The state must stay DROWSY for `min_trigger_duration` seconds, so a
             single noisy frame cannot set it off.
           * At least `cooldown` seconds must pass between two sounds.
+
+        `immediate` skips the first guard for events that are already
+        time-qualified (a microsleep or a long yawn).
         """
         now = now if now is not None else time.time()
 
@@ -163,7 +168,7 @@ class AlarmSystem:
         if self._drowsy_since is None:
             self._drowsy_since = now
 
-        if now - self._drowsy_since < self.min_trigger_duration:
+        if not immediate and now - self._drowsy_since < self.min_trigger_duration:
             return False                # drowsy, but not for long enough yet
 
         if now - self._last_played < self.cooldown:

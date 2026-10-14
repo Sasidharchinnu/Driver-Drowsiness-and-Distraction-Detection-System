@@ -23,7 +23,7 @@ and no manual input anywhere in the system.
 | Drowsiness score | Weighted blend of PERCLOS, current closure, yawn rate, blink rate |
 | Attention heatmap | Gaussian blobs over eyes/mouth scaled by live EAR/MAR |
 | Alarm | Synthesised two-tone siren, played off-thread with a cooldown |
-| Dashboard | Streamlit: live feed, heatmap, all metrics, FPS, score history |
+| Dashboard | Streamlit + WebRTC: live mirrored driver video, status gauge, metrics, heatmap, score timeline |
 
 ---
 
@@ -71,9 +71,15 @@ webcam, the live pipeline and the dashboard script. Every line should say
 streamlit run app.py
 ```
 
-Your browser opens at `http://localhost:8501`. **The webcam starts by itself** —
-you do not click anything. Sit in front of the camera and the boxes, score and
-heatmap appear immediately.
+Your browser opens at `http://localhost:8501`. Press **▶ Start monitoring**,
+allow camera access, and you appear in the live panel with the YOLO boxes,
+eye/mouth labels and heatmap drawn on your face. The driver status, score
+gauge, statistics and score timeline update alongside the video.
+
+The webcam is captured by the **browser** and streamed to Python over WebRTC
+(`streamlit-webrtc`), so the same app also works when deployed to a server
+that has no camera of its own. The alarm plays in the browser by default; the
+sidebar can switch it to the speakers of the computer running the app.
 
 ### The OpenCV window version (fastest, best for a live demo)
 

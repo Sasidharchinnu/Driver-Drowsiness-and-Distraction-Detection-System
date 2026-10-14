@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import cv2
 import numpy as np
 
 from .config import resolve_path
@@ -210,9 +211,21 @@ class YOLODetector:
         if frame is None or frame.size == 0:
             return DetectionResult()
 
+        # YOLO shrinks every frame to `imgsz` anyway. Doing it ourselves with
+        # one fast cv2.resize keeps high-resolution (720p+) cameras cheap; the
+        # boxes are scaled back to full-frame coordinates below.
+        frame_h, frame_w = frame.shape[:2]
+        scale = min(1.0, self.imgsz / float(max(frame_h, frame_w)))
+        model_input = frame
+        if scale < 1.0:
+            model_input = cv2.resize(
+                frame, (round(frame_w * scale), round(frame_h * scale)),
+                interpolation=cv2.INTER_AREA,
+            )
+
         try:
             results = self.model.predict(
-                frame,
+                model_input,
                 imgsz=self.imgsz,
                 conf=self.confidence,
                 iou=self.iou,
@@ -240,8 +253,7 @@ class YOLODetector:
         if boxes is None or len(boxes) == 0:
             return output
 
-        frame_h, frame_w = frame.shape[:2]
-        xyxy = boxes.xyxy.cpu().numpy()
+        xyxy = boxes.xyxy.cpu().numpy() / scale
         confs = boxes.conf.cpu().numpy()
         class_ids = boxes.cls.cpu().numpy().astype(int)
 

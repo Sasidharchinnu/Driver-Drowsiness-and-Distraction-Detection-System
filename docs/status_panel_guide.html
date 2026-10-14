@@ -1,0 +1,420 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Driver Status Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Page chrome follows light/dark; the panel replica always uses the app's dark
+   theme so it looks exactly like what the driver sees in Streamlit. */
+:root {
+  --bg: #f3f6f8; --panel: #ffffff; --ink: #13202a; --muted: #566573; --line: #d9e1e7;
+  --accent: #0b6a87; --accent-soft: #e2f1f6; --quiet: #e9eef2;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* app palette (replica) */
+  --app-bg: #0b1120; --app-card: #111827; --app-ink: #f1f5f9; --app-muted: #94a3b8;
+  --app-faint: #64748b; --app-line: rgba(148,163,184,0.14);
+  --s-ok: #22c55e; --s-warn: #f59e0b; --s-bad: #ef4444; --s-none: #64748b; --s-idle: #1e293b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1317; --panel: #131d23; --ink: #e5edf2; --muted: #9aabb8; --line: #263540;
+    --accent: #5cc6e3; --accent-soft: #12303b; --quiet: #1b2830; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1317; --panel: #131d23; --ink: #e5edf2; --muted: #9aabb8; --line: #263540;
+  --accent: #5cc6e3; --accent-soft: #12303b; --quiet: #1b2830; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 17px; line-height: 1.6; padding: 0 16px 64px; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.3rem, 6vw, 3.4rem); font-weight: 800; }
+h2 { font-size: clamp(1.6rem, 3.4vw, 2.1rem); font-weight: 700; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.muted { color: var(--muted); }
+code { font-family: var(--font-data); font-size: 0.86em; background: var(--quiet); padding: 0.05em 0.35em; border-radius: 4px; }
+header { display: grid; gap: 14px; padding: 44px 0 28px; }
+header .lede { font-size: 1.12rem; max-width: 64ch; }
+section { display: grid; gap: 20px; padding: 40px 0; border-top: 1px solid var(--line); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- layout: replica + explanations ---------- */
+.anatomy { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 32px; align-items: start; }
+.sticky { position: sticky; top: 16px; display: grid; gap: 12px; min-width: 0; }
+.parts, .app, .part, .player { min-width: 0; }
+@media (max-width: 860px) { .anatomy { grid-template-columns: minmax(0, 1fr); } .sticky { position: static; } }
+
+/* ---------- the replica panel ---------- */
+.app { background: var(--app-bg); border-radius: 18px; padding: 18px; color: var(--app-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; gap: 12px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 10px 30px rgba(8,15,30,0.18); }
+.app .title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--app-muted); font-weight: 600; }
+.part { position: relative; border-radius: 16px; transition: box-shadow .2s; }
+.part.hl { box-shadow: 0 0 0 3px #38bdf8; }
+.badge { position: absolute; top: -9px; left: -9px; width: 24px; height: 24px; border-radius: 50%;
+  background: #38bdf8; color: #04121c; font: 700 0.8rem/24px var(--font-data); text-align: center; z-index: 2; }
+.status { border-radius: 16px; padding: 14px 16px; color: #fff; display: flex; align-items: center; gap: 12px; transition: background .25s; }
+.status .icon { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.85); flex: none; }
+.status .label { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.05em; line-height: 1.1; }
+.status .sub { font-size: 0.85rem; opacity: 0.92; }
+.status .score { margin-left: auto; text-align: right; }
+.status.pulse { animation: pulse 0.8s infinite; }
+@keyframes pulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.3); } }
+@media (prefers-reduced-motion: reduce) { .status.pulse { animation: none; } }
+.msg { border-radius: 10px; padding: 10px 12px; font-size: 0.88rem; line-height: 1.4; min-height: 42px; }
+.msg.err { background: rgba(239,68,68,0.16); color: #fecaca; }
+.msg.warn { background: rgba(245,158,11,0.16); color: #fde68a; }
+.msg.none { background: transparent; color: var(--app-faint); border: 1px dashed rgba(148,163,184,0.25); }
+.gauge svg { width: 100%; height: auto; display: block; }
+.tiles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.tile { background: var(--app-card); border: 1px solid var(--app-line); border-radius: 14px; padding: 9px 12px;
+  border-top: 3px solid var(--edge, #334155); transition: border-color .2s; }
+.tile .k { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--app-muted); font-weight: 600; }
+.tile .v { font-size: 1.35rem; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.tile .h { font-size: 0.7rem; color: var(--app-faint); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- player ---------- */
+.player { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.scen { display: flex; flex-wrap: wrap; gap: 6px; }
+.scen button { font: 600 0.85rem var(--font-body); padding: 6px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.scen button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.prog { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.prog button { font: 600 0.85rem var(--font-body); border: 1px solid var(--line); background: var(--bg);
+  color: var(--ink); border-radius: 8px; padding: 4px 10px; cursor: pointer; min-width: 74px; }
+.track { height: 8px; border-radius: 4px; background: var(--quiet); overflow: hidden; }
+.track i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px; }
+.clock { font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.narr { font-size: 0.95rem; min-height: 3em; }
+
+/* ---------- explanations ---------- */
+.parts { display: grid; gap: 12px; }
+.card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 16px 18px 16px 62px; display: grid; gap: 6px; min-width: 0; cursor: default; transition: border-color .15s; }
+.card:hover, .card:focus-within { border-color: var(--accent); }
+.card .n { position: absolute; left: 18px; top: 15px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft);
+  color: var(--accent); font: 700 0.9rem/30px var(--font-data); text-align: center; }
+.card h3 { font-size: 1.3rem; }
+.card ul { margin: 4px 0 0; padding-left: 1.1em; display: grid; gap: 3px; }
+.card li::marker { color: var(--muted); }
+.sw { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 3px; vertical-align: -0.05em; margin-right: 4px; }
+
+/* ---------- tables ---------- */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; min-width: 560px; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.95rem; }
+th { font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; font: 800 0.8rem var(--font-display); letter-spacing: 0.06em; padding: 1px 9px; border-radius: 999px; color: #fff; white-space: nowrap; }
+footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem; }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Driver Drowsiness Monitor · panel guide</div>
+  <h1>The Driver Status panel, piece by piece</h1>
+  <p class="lede">This is the panel on the right of the camera in the Streamlit app. It refreshes about
+  2.5 times a second. Below is an exact copy of it. Press a situation to watch the panel react the way
+  the real app does, or hover any explanation to see which part of the panel it describes.</p>
+</header>
+
+<section aria-labelledby="h-anatomy">
+  <h2 id="h-anatomy">What each part tells you</h2>
+  <div class="anatomy">
+    <div class="sticky">
+      <div class="app" aria-label="Replica of the Driver status panel">
+        <div class="title">Driver status</div>
+        <div class="part" data-part="1"><span class="badge">1</span>
+          <div class="status" id="banner">
+            <div class="icon"></div>
+            <div><div class="label" id="b-label">ALERT</div><div class="sub" id="b-sub">Driver is awake and attentive</div></div>
+            <div class="score"><div class="sub">Score</div><div class="label" id="b-score">3</div></div>
+          </div>
+        </div>
+        <div class="part" data-part="2"><span class="badge">2</span>
+          <div class="msg none" id="msg">No message while the driver is ALERT</div>
+        </div>
+        <div class="part gauge" data-part="3"><span class="badge">3</span>
+          <svg viewBox="-12 0 264 140" role="img" aria-label="Score gauge" id="gauge"></svg>
+        </div>
+        <div class="tiles">
+          <div class="part" data-part="4"><span class="badge">4</span>
+            <div class="tile" id="t-eyes"><div class="k">Eyes</div><div class="v" id="t-eyes-v">Open</div><div class="h" id="t-eyes-h">EAR 0.30 · closed &lt; 0.22 ✓</div></div></div>
+          <div class="part" data-part="5"><span class="badge">5</span>
+            <div class="tile" id="t-mouth"><div class="k">Mouth</div><div class="v" id="t-mouth-v">Normal</div><div class="h" id="t-mouth-h">MAR 0.18 · yawn &gt; 0.45</div></div></div>
+          <div class="part" data-part="6"><span class="badge">6</span>
+            <div class="tile"><div class="k">PERCLOS</div><div class="v" id="t-per-v">2%</div><div class="h">eyes-closed time, last 60s</div></div></div>
+          <div class="part" data-part="7"><span class="badge">7</span>
+            <div class="tile"><div class="k">Head tilt</div><div class="v" id="t-tilt-v">+2°</div><div class="h" id="t-tilt-h">1 face(s) in view</div></div></div>
+        </div>
+      </div>
+
+      <div class="player">
+        <div class="scen" role="group" aria-label="Situations" id="scen"></div>
+        <div class="prog">
+          <button id="play" type="button">Pause</button>
+          <div class="track"><i id="bar"></i></div>
+          <span class="clock" id="clock">0.0 s</span>
+        </div>
+        <p class="narr" id="narr" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <div class="parts">
+      <div class="card" data-part="1" tabindex="0">
+        <span class="n">1</span><h3>Status banner</h3>
+        <p>The big coloured bar is the one-glance answer: <b>is the driver OK right now?</b> The number on the right is the drowsiness score from 0 to 100.</p>
+        <ul>
+          <li><span class="sw" style="background:var(--s-ok)"></span><b>ALERT</b>, score 0–39: awake and attentive.</li>
+          <li><span class="sw" style="background:var(--s-warn)"></span><b>WARNING</b>, score 40–59: early signs of fatigue.</li>
+          <li><span class="sw" style="background:var(--s-bad)"></span><b>DROWSY</b>, score 60–100, or an instant rule fired: it flashes and the alarm sounds.</li>
+          <li><span class="sw" style="background:var(--s-none)"></span><b>NO FACE</b>: nobody is in front of the camera.</li>
+          <li><span class="sw" style="background:var(--s-idle)"></span><b>STANDBY / CONNECTING…</b>: the camera has not started yet.</li>
+        </ul>
+      </div>
+      <div class="card" data-part="2" tabindex="0">
+        <span class="n">2</span><h3>Reason message</h3>
+        <p>Shown only in WARNING or DROWSY. It names the <b>single biggest reason</b>, checked in this order:</p>
+        <ul>
+          <li>👁️ <b>Eyes closed for X s</b>: the eyes are shut longer than a normal blink (0.4 s).</li>
+          <li>🥱 <b>Mouth open for X s (alarm at 2.5 s)</b>: a yawn is in progress.</li>
+          <li>🥱 <b>Frequent yawning: N in the last minute</b>: 3 or more yawns.</li>
+          <li>👁️ <b>Eyes closed N% of the last minute</b>: the PERCLOS measure is high.</li>
+        </ul>
+        <p class="muted">Yellow box means a fatigue sign. Red box with 🔊 ALARM means the alarm fired, and it shows how many times it has fired this session.</p>
+      </div>
+      <div class="card" data-part="3" tabindex="0">
+        <span class="n">3</span><h3>Score gauge</h3>
+        <p>The same score as the banner, drawn as a dial so you can see <b>how close</b> it is to the next level. The coloured bar grows from the left. The faint background bands are green 0–40, amber 40–60 and red 60–100.</p>
+        <p class="muted">The score is smoothed, so it rises and falls gradually instead of jumping on every frame. Once it reaches a band, it has to drop 6 points below that band's line before it leaves. That stops the colour flickering at the edges.</p>
+      </div>
+      <div class="card" data-part="4" tabindex="0">
+        <span class="n">4</span><h3>Eyes tile</h3>
+        <p><b>Open</b> or <b>Closed</b>. The top edge turns red while closed.</p>
+        <ul>
+          <li>Eyes open: the small line shows <code>EAR 0.30 · closed &lt; 0.22 ✓</code>. EAR is how open the eye is (lower = more closed). The second number is the line below which the eye counts as closed.</li>
+          <li>The <b>✓</b> appears after about 30 s, once the app has learned <i>your</i> normal eye shape and set that line for you.</li>
+          <li>Eyes closed: it switches to a stopwatch, <code>0.85s shut</code>. At <b>1.2 s</b> that is a microsleep and the alarm sounds immediately.</li>
+        </ul>
+      </div>
+      <div class="card" data-part="5" tabindex="0">
+        <span class="n">5</span><h3>Mouth tile</h3>
+        <p><b>Normal</b> or <b>Yawning</b>. The top edge turns amber while yawning.</p>
+        <ul>
+          <li><code>MAR 0.18 · yawn &gt; 0.45</code>: MAR is how wide the mouth is open. Above 0.45 counts as wide open.</li>
+          <li>It becomes <b>Yawning</b> only after the mouth stays wide open for <b>1.2 s</b>, so talking and laughing are ignored.</li>
+          <li>Held open for <b>2.5 s</b>: DROWSY and the alarm.</li>
+        </ul>
+      </div>
+      <div class="card" data-part="6" tabindex="0">
+        <span class="n">6</span><h3>PERCLOS tile</h3>
+        <p>The share of the <b>last 60 seconds</b> the eyes spent closed (normal blinks are not counted). This is the slow, long-term fatigue signal and the biggest part of the score (up to 40 points).</p>
+        <ul>
+          <li>Under ~5%: normal.</li>
+          <li>Around 20%: clearly fatigued, worth the full 40 points.</li>
+        </ul>
+      </div>
+      <div class="card" data-part="7" tabindex="0">
+        <span class="n">7</span><h3>Head tilt tile</h3>
+        <p>How far the head leans sideways, in degrees (+ is one side, − the other). Below it is how many faces the camera sees.</p>
+        <ul>
+          <li>This is <b>for information only</b>: it does not change the score.</li>
+          <li>A head slowly drooping to one side is a useful visual hint. "0 face(s)" explains a NO FACE banner.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="h-read">
+  <h2 id="h-read">Reading the whole panel in two seconds</h2>
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr><th>You see</th><th>It means</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill" style="background:var(--s-ok)">ALERT</span> no message</td><td>Everything normal. Blinks, talking and short laughs are ignored.</td><td>Nothing.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 🥱 Mouth open</td><td>A yawn is in progress (mouth open 1.2–2.5 s).</td><td>Stay aware; yawns are an early sign of tiredness.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 🥱 Frequent yawning</td><td>3 or more yawns within one minute.</td><td>Plan a break soon.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 👁️ Eyes closed N%</td><td>The eyes have been closing a lot over the last minute.</td><td>Plan a break soon.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-bad)">DROWSY</span> + 🔊 Eyes closed</td><td>Microsleep: eyes shut 1.2 s or longer.</td><td>Pull over safely and rest.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-bad)">DROWSY</span> + 🔊 Mouth open</td><td>Mouth held wide open 2.5 s or longer.</td><td>Pull over safely and rest.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-none)">NO FACE</span></td><td>The camera cannot find a face: looking away, bad light, or out of frame.</td><td>Face the camera; add light.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer class="muted">
+  Numbers match <code>config/config.yaml</code>: blink 0.4 s, microsleep 1.2 s, yawn 1.2 s, yawn alarm 2.5 s,
+  WARNING at 40, DROWSY at 60. The player above uses illustrative readings that follow the same rules.
+  For how the score itself is calculated, see <code>docs/alert_guide.html</code>.
+</footer>
+</div>
+
+<script>
+(() => {
+  const STATES = {
+    ALERT:   { c: "#22c55e", sub: "Driver is awake and attentive" },
+    WARNING: { c: "#f59e0b", sub: "Early signs of fatigue" },
+    DROWSY:  { c: "#ef4444", sub: "Wake up! Pull over safely" },
+    "NO FACE": { c: "#64748b", sub: "Look at the camera" },
+  };
+  const EAR_LINE = 0.22, MAR_LINE = 0.45, WARN = 40, DROWSY = 60;
+
+  // Each scenario returns the panel readings at time t (seconds).
+  const base = { state: "ALERT", score: 3, eyes: false, shut: 0, ear: 0.30, yawn: false, mar: 0.18, ydur: 0,
+                 perclos: 2, tilt: 2, faces: 1, msg: null, alarms: 0 };
+  const lerp = (a, b, k) => a + (b - a) * Math.max(0, Math.min(1, k));
+  const eyesShut = (t, from, to) => t >= from && t < to ? t - from : 0;
+
+  const SCEN = [
+    { id: "normal", name: "Normal driving", len: 8, f: t => {
+        const s = [1.5, 4.2, 6.6].map(b => eyesShut(t, b, b + 0.15)).find(x => x > 0) || 0;
+        return { ...base, eyes: s > 0, shut: s, ear: s > 0 ? 0.11 : 0.30 + 0.01 * Math.sin(t * 3) };
+      }, say: t => t < 8 ? "Normal blinks last about 0.15 s. The Eyes tile flicks to Closed, but the score stays near zero and the banner stays green." : "" },
+    { id: "talk", name: "Talking", len: 7, f: t => {
+        const mar = 0.2 + 0.32 * Math.abs(Math.sin(t * 4.2));
+        return { ...base, mar };
+      }, say: () => "While talking, MAR keeps crossing 0.45, but never for 1.2 s in a row, so the Mouth tile stays Normal." },
+    { id: "slow", name: "Slow blink", len: 6, f: t => {
+        const s = eyesShut(t, 1.5, 2.5);
+        const extra = s > 0.4 ? (s - 0.4) / 0.8 * 35 : 0;
+        const after = t >= 2.5 ? Math.max(0, 26 - (t - 2.5) * 9) : 0;
+        const score = Math.round(3 + Math.max(extra * 0.75, after));
+        return { ...base, eyes: s > 0, shut: s, ear: s > 0 ? 0.12 : 0.29, score, perclos: t >= 2.5 ? 3 : 2 };
+      }, say: t => t < 1.5 ? "Eyes open…" : t < 2.5 ? "Eyes closed for 1 s: past the 0.4 s blink limit, so the score climbs." : "It peaked in the 20s and is falling again. One slow blink is not enough for a WARNING." },
+    { id: "micro", name: "Microsleep", len: 7, f: t => {
+        const s = eyesShut(t, 1, 3.5);
+        let r = { ...base, eyes: s > 0, shut: s, ear: s > 0 ? 0.10 : 0.29 };
+        if (s > 0.4) r.score = Math.round(3 + Math.min(1, (s - 0.4) / 0.8) * 35 * 0.8);
+        if (s > 0.4 && s < 1.2) { r.state = r.score >= WARN ? "WARNING" : "ALERT"; }
+        if (s >= 1.2) { r.state = "DROWSY"; r.score = Math.round(Math.min(78, 31 + (s - 1.2) * 30)); r.alarms = 1;
+          r.msg = ["err", `🔊 <b>ALARM</b> — 👁️ Eyes closed for <b>${s.toFixed(1)}s</b> · triggered 1× this session`]; }
+        if (t >= 3.5) { const k = (t - 3.5) / 3; r.score = Math.round(lerp(78, 50, k)); r.perclos = 6;
+          r.state = r.score >= DROWSY - 6 ? "DROWSY" : "WARNING";
+          r.msg = r.state === "DROWSY" ? ["err", "🔊 <b>ALARM</b> — 👁️ Eyes closed <b>6%</b> of the last minute · triggered 1× this session"]
+                                       : ["warn", "⚠️ <b>Fatigue sign</b> — 👁️ Eyes closed <b>6%</b> of the last minute"]; }
+        return r;
+      }, say: t => t < 1 ? "Eyes open…" : t < 2.2 ? "Eyes shut. The Eyes tile becomes a stopwatch." : t < 3.5 ? "1.2 s reached: microsleep. DROWSY and the alarm, instantly, whatever the score says." : "Eyes open again. The score eases down; the banner steps back down once it drops below the 54 / 34 lines." },
+    { id: "yawn", name: "Yawn (2 s)", len: 6, f: t => {
+        const open = t >= 1 && t < 3 ? t - 1 : 0;
+        let r = { ...base, mar: open > 0 ? 0.62 : 0.18 };
+        if (open >= 1.2) { r.yawn = true; r.ydur = open; r.state = "WARNING";
+          r.score = Math.round(42 + (open - 1.2) / 1.3 * 16);
+          r.msg = ["warn", `⚠️ <b>Fatigue sign</b> — 🥱 Mouth open for <b>${open.toFixed(1)}s</b> (alarm at 2.5s)`]; }
+        if (t >= 3) { r.score = Math.round(Math.max(8, 54 - (t - 3) * 18)); r.state = r.score >= WARN - 6 ? "WARNING" : "ALERT";
+          if (r.state === "WARNING") r.msg = ["warn", "⚠️ <b>Fatigue sign</b> — 🥱 Yawn just ended"]; }
+        return r;
+      }, say: t => t < 1 ? "Mouth closed…" : t < 2.2 ? "Mouth wide open, but under 1.2 s it could still be talking or a laugh." : t < 3 ? "Past 1.2 s: it's a yawn. WARNING, with the score climbing toward 58." : "Mouth closed before 2.5 s, so no alarm. The banner returns to green." },
+    { id: "longyawn", name: "Long yawn (3 s+)", len: 6.5, f: t => {
+        const open = t >= 1 && t < 4.5 ? t - 1 : 0;
+        let r = { ...base, mar: open > 0 ? 0.66 : 0.18 };
+        if (open >= 1.2) { r.yawn = true; r.ydur = open; r.state = "WARNING";
+          r.score = Math.round(42 + Math.min(1, (open - 1.2) / 1.3) * 16);
+          r.msg = ["warn", `⚠️ <b>Fatigue sign</b> — 🥱 Mouth open for <b>${open.toFixed(1)}s</b> (alarm at 2.5s)`]; }
+        if (open >= 2.5) { r.state = "DROWSY"; r.alarms = 1;
+          r.msg = ["err", `🔊 <b>ALARM</b> — 🥱 Mouth open for <b>${open.toFixed(1)}s</b> (alarm at 2.5s) · triggered 1× this session`]; }
+        if (t >= 4.5) { r.score = Math.round(Math.max(20, 58 - (t - 4.5) * 14)); r.state = r.score >= WARN - 6 ? "WARNING" : "ALERT";
+          if (r.state === "WARNING") r.msg = ["warn", "⚠️ <b>Fatigue sign</b> — 🥱 1 yawn in the last minute"]; }
+        return r;
+      }, say: t => t < 1 ? "Mouth closed…" : t < 2.2 ? "Mouth opens wide…" : t < 3.5 ? "1.2 s: a yawn, so WARNING." : t < 4.5 ? "2.5 s: DROWSY and the alarm, exactly on time." : "Mouth closes; the panel settles back down." },
+    { id: "away", name: "Look away", len: 5, f: t => {
+        const gone = t >= 1.2 && t < 3.8;
+        return gone ? { ...base, state: "NO FACE", faces: 0, score: 3, ear: 0, mar: 0, noface: true } : { ...base, tilt: t < 1.2 ? 2 : 14 * (1 - (t - 3.8)) + 2 };
+      }, say: t => t < 1.2 ? "Facing the camera…" : t < 3.8 ? "No face found: grey NO FACE banner and 0 face(s) in the Head tilt tile. Nothing is scored while the face is gone." : "Face found again; monitoring resumes." },
+  ];
+
+  const $ = id => document.getElementById(id);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const g = $("gauge");
+  const cx = 120, cy = 118, R = 92;
+  const pt = v => { const a = Math.PI * (1 - v / 100); return [cx + R * Math.cos(a), cy - R * Math.sin(a)]; };
+  const arc = (a, b) => { const [x1, y1] = pt(a), [x2, y2] = pt(b); return `M${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 0 1 ${x2.toFixed(2)},${y2.toFixed(2)}`; };
+  const el = (tag, attrs) => { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); g.appendChild(e); return e; };
+  el("path", { d: arc(0, WARN), stroke: "rgba(34,197,94,0.22)", "stroke-width": 26, fill: "none" });
+  el("path", { d: arc(WARN, DROWSY), stroke: "rgba(245,158,11,0.24)", "stroke-width": 26, fill: "none" });
+  el("path", { d: arc(DROWSY, 100), stroke: "rgba(239,68,68,0.26)", "stroke-width": 26, fill: "none" });
+  const bar = el("path", { d: arc(0, 0.01), stroke: "#22c55e", "stroke-width": 9, fill: "none", "stroke-linecap": "butt" });
+  [0, WARN, DROWSY, 100].forEach(v => {
+    const a = Math.PI * (1 - v / 100), r2 = R + 22;
+    const t = el("text", { x: cx + r2 * Math.cos(a), y: cy - r2 * Math.sin(a) + 4, "text-anchor": "middle",
+      "font-size": 10, fill: "#94a3b8", "font-family": "system-ui, sans-serif" });
+    t.textContent = v;
+  });
+  const num = el("text", { x: cx, y: cy - 6, "text-anchor": "middle", "font-size": 30, "font-weight": 600, fill: "#f1f5f9",
+    "font-family": "system-ui, sans-serif" });
+
+  function render(r) {
+    const st = STATES[r.state];
+    const banner = $("banner");
+    banner.style.background = st.c;
+    banner.classList.toggle("pulse", r.state === "DROWSY");
+    $("b-label").textContent = r.state;
+    $("b-sub").textContent = st.sub;
+    $("b-score").textContent = Math.round(r.score);
+    const msg = $("msg");
+    if (r.msg) { msg.className = "msg " + r.msg[0]; msg.innerHTML = r.msg[1]; }
+    else if (r.state === "WARNING" || r.state === "DROWSY") { msg.className = "msg warn"; msg.innerHTML = "⚠️ <b>Fatigue sign</b> — 👁️ Eyes closed longer than a blink"; }
+    else { msg.className = "msg none"; msg.textContent = r.state === "NO FACE" ? "No message: nothing to score without a face" : "No message while the driver is ALERT"; }
+    bar.setAttribute("d", arc(0, Math.max(0.01, Math.min(100, r.score))));
+    bar.setAttribute("stroke", st.c);
+    num.innerHTML = `${Math.round(r.score)}<tspan font-size="16" fill="#94a3b8"> / 100</tspan>`;
+    $("t-eyes").style.setProperty("--edge", r.eyes ? "#ef4444" : "#22c55e");
+    $("t-eyes-v").textContent = r.noface ? "—" : r.eyes ? "Closed" : "Open";
+    $("t-eyes-h").innerHTML = r.noface ? "no face to measure" : r.shut > 0 ? `${r.shut.toFixed(2)}s shut` : `EAR ${r.ear.toFixed(2)} · closed &lt; ${EAR_LINE.toFixed(2)} ✓`;
+    $("t-mouth").style.setProperty("--edge", r.yawn ? "#f59e0b" : "#334155");
+    $("t-mouth-v").textContent = r.noface ? "—" : r.yawn ? "Yawning" : "Normal";
+    $("t-mouth-h").innerHTML = r.noface ? "no face to measure" : `MAR ${r.mar.toFixed(2)} · yawn &gt; ${MAR_LINE.toFixed(2)}`;
+    $("t-per-v").textContent = `${Math.round(r.perclos)}%`;
+    $("t-tilt-v").textContent = r.noface ? "—" : `${r.tilt >= 0 ? "+" : ""}${Math.round(r.tilt)}°`;
+    $("t-tilt-h").textContent = `${r.faces} face(s) in view`;
+  }
+
+  // ---- player ----
+  let cur = SCEN[0], t0 = performance.now(), paused = false, pausedAt = 0, lastSay = "";
+  const scenBox = $("scen");
+  SCEN.forEach(s => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = s.name; b.setAttribute("aria-pressed", s === cur);
+    b.onclick = () => { cur = s; t0 = performance.now(); pausedAt = 0; paused = false; $("play").textContent = "Pause";
+      scenBox.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
+    scenBox.appendChild(b);
+  });
+  $("play").onclick = () => {
+    paused = !paused;
+    if (paused) pausedAt = (performance.now() - t0) / 1000;
+    else t0 = performance.now() - pausedAt * 1000;
+    $("play").textContent = paused ? "Play" : "Pause";
+  };
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function frame(now) {
+    let t = paused ? pausedAt : (now - t0) / 1000;
+    if (t > cur.len + 1.2) { t0 = now; t = 0; }   // short hold, then loop
+    const tc = Math.min(t, cur.len);
+    render(cur.f(tc));
+    $("bar").style.width = `${(tc / cur.len) * 100}%`;
+    $("clock").textContent = `${tc.toFixed(1)} s`;
+    const say = cur.say(tc);
+    if (say !== lastSay) { $("narr").textContent = say; lastSay = say; }
+    requestAnimationFrame(frame);
+  }
+  if (reduce) { paused = true; pausedAt = 0; $("play").textContent = "Play"; }
+  requestAnimationFrame(frame);
+
+  // ---- hover an explanation to highlight its part ----
+  const hl = n => document.querySelectorAll(".app .part").forEach(p => p.classList.toggle("hl", p.dataset.part === n));
+  document.querySelectorAll(".card").forEach(c => {
+    c.addEventListener("mouseenter", () => hl(c.dataset.part));
+    c.addEventListener("focus", () => hl(c.dataset.part));
+    c.addEventListener("mouseleave", () => hl(null));
+    c.addEventListener("blur", () => hl(null));
+  });
+})();
+</script>
+</html>

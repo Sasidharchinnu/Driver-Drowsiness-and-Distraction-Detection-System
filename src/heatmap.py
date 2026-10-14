@@ -184,7 +184,9 @@ class AttentionHeatmap:
         colored = cv2.applyColorMap(as_bytes, self.colormap)
         return cv2.resize(colored, (width, height), interpolation=cv2.INTER_LINEAR)
 
-    def overlay(self, frame: np.ndarray, attention: np.ndarray) -> np.ndarray:
+    def overlay(
+        self, frame: np.ndarray, attention: np.ndarray, colored: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         """Blend the heatmap onto the frame, weighted by local intensity.
 
         We do NOT blend uniformly: the blend weight at each pixel is
@@ -198,22 +200,38 @@ class AttentionHeatmap:
         if float(attention.max()) < 0.02:
             return frame
 
-        colored = self.colorize(attention)
+        if colored is None:
+            colored = self.colorize(attention)
+
+        # Only blend the region that is actually warm (around the face). At
+        # 720p this is several times cheaper than blending every pixel.
+        x, y, w, h = cv2.boundingRect((attention > 0.004).astype(np.uint8))
+        if w == 0 or h == 0:
+            return frame
+        region = (slice(y, y + h), slice(x, x + w))
+
         # Per-pixel blend weight, broadcast from HxW to HxWx3.
         # Everything stays float32 so numpy never promotes to slower float64.
-        weight = (attention * self.alpha).astype(np.float32)[:, :, np.newaxis]
-        blended = frame.astype(np.float32) * (1.0 - weight) + colored.astype(np.float32) * weight
-        return blended.astype(np.uint8)
+        weight = (attention[region] * self.alpha).astype(np.float32)[:, :, np.newaxis]
+        blended = (frame[region].astype(np.float32) * (1.0 - weight)
+                   + colored[region].astype(np.float32) * weight)
+        output = frame.copy()
+        output[region] = blended.astype(np.uint8)
+        return output
 
     def standalone_view(
-        self, attention: np.ndarray, frame: Optional[np.ndarray] = None
+        self,
+        attention: np.ndarray,
+        frame: Optional[np.ndarray] = None,
+        colored: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """The heatmap on its own, for the separate dashboard panel.
 
         If a frame is supplied we keep a faint greyscale version underneath so
         you can still tell where the face is.
         """
-        colored = self.colorize(attention)
+        if colored is None:
+            colored = self.colorize(attention)
         if frame is None:
             return colored
         grey = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
