@@ -60,6 +60,24 @@ clearly below it (hysteresis) for longer than a short grace period. Brief
 dips, or FaceMesh losing the face for a moment while the head tilts back, do
 not cut the yawn short. Eyes naturally squeeze shut during a yawn, so eye
 closure is not scored while a yawn is in progress.
+
+Head falling (nodding off)
+--------------------------
+When sleep wins, the neck muscles relax and the head drops - usually forward
+onto the chest, sometimes sideways or back. FaceMesh gives us the head's pitch
+(forward / back) and roll (sideways) every frame.
+
+* Personal posture: every camera sits at a different angle, so "upright" is
+  learned as the median pose over the last 30 s while the head is steady. The
+  head counts as falling when it leaves that posture by more than
+  head_drop_angle (forward), head_back_angle (back) or head_side_angle (sideways).
+* head down, any time                       -> at least WARNING
+* head down for head_drop_duration (1.5 s)  -> DROWSY + alarm
+* A falling head often takes the face out of view. If the face vanishes
+  while the head was already dropping, that is treated as the head still being
+  down (for up to head_lost_hold seconds) instead of "no face", so the alarm
+  still sounds.
+* Tilting the head back is ignored while yawning - that is part of a yawn.
 """
 
 from __future__ import annotations
@@ -102,7 +120,13 @@ class DrowsinessMetrics:
     blink_rate: float = 0.0            # blinks per minute
     yawn_rate: float = 0.0             # yawns per minute
     microsleep_count: int = 0
-    head_tilt: float = 0.0
+    head_tilt: float = 0.0             # roll, degrees, relative to the learned upright pose
+    head_pitch: float = 0.0            # degrees, + = forward, relative to the upright pose
+    head_down: bool = False            # the head is dropped right now
+    head_down_duration: float = 0.0    # seconds it has been down
+    head_direction: str = ""           # "forward", "backward" or "sideways"
+    head_nod_count: int = 0            # head drops this session
+    head_calibrated: bool = False      # True once the upright pose has been learned
     face_detected: bool = False
     face_count: int = 0
     alarm_active: bool = False
@@ -138,6 +162,18 @@ class DrowsinessEngine:
     MAR_SMOOTHING = 0.15
     # State hysteresis: leave a band only when the score is this far below it.
     STATE_HYSTERESIS = 6.0
+    # Head pose calibration: median of steady-head samples over this window.
+    POSE_WINDOW = 30.0                 # s
+    POSE_MIN_SAMPLES = 30              # ~1 s at 30 FPS before pitch is judged
+    # Once down, the head counts as up again only below this fraction of the
+    # threshold, and only after this grace period (noisy frames).
+    HEAD_RELEASE_RATIO = 0.80
+    HEAD_GRACE = 0.30                  # s
+    # A head drop this long counts as a nod in the session statistics.
+    HEAD_NOD_MIN = 0.50                # s
+    # If the face vanishes within this long after the head started falling,
+    # the head is assumed to still be down.
+    HEAD_FALL_MEMORY = 0.80            # s
 
     def __init__(self, cfg):
         """`cfg` is the `drowsiness` section of config.yaml."""
@@ -158,6 +194,11 @@ class DrowsinessEngine:
         self.frequent_yawns = int(cfg.get("frequent_yawns", 3))
         self.auto_calibrate = bool(cfg.get("auto_calibrate", True))
         self.ear_closed_ratio = float(cfg.get("ear_closed_ratio", 0.72))
+        self.head_drop_angle = float(cfg.get("head_drop_angle", 20.0))
+        self.head_back_angle = float(cfg.get("head_back_angle", 30.0))
+        self.head_side_angle = float(cfg.get("head_side_angle", 30.0))
+        self.head_drop_duration = float(cfg.get("head_drop_duration", 1.5))
+        self.head_lost_hold = float(cfg.get("head_lost_hold", 8.0))
 
         weights = cfg.weights
         self.weights = {
@@ -191,9 +232,18 @@ class DrowsinessEngine:
         self._raw_last_high = 0.0
         self._counted_current_yawn = False
 
+        self._pose_samples: Deque[Tuple[float, float, float]] = deque()  # (t, pitch, roll)
+        self._head_down_start: Optional[float] = None
+        self._head_last_down = 0.0
+        self._head_direction = ""
+        self._head_falling_at = float("-inf")   # last time the head was half-way down
+        self._last_face_time = float("-inf")
+        self._counted_current_nod = False
+
         self.blink_count = 0
         self.yawn_count = 0
         self.microsleep_count = 0
+        self.head_nod_count = 0
         self.longest_closure = 0.0
 
         self._smoothed_score = 0.0
@@ -234,6 +284,7 @@ class DrowsinessEngine:
         face_count: int = 0,
         head_tilt: float = 0.0,
         now: Optional[float] = None,
+        head_pitch: Optional[float] = None,
     ) -> DrowsinessMetrics:
         """Feed one frame of measurements in, get the current assessment out."""
         now = now if now is not None else time.time()
@@ -249,6 +300,11 @@ class DrowsinessEngine:
             # A yawn survives a brief loss (head tilted back); a long one ends it.
             if self._yawn_start is not None and now - self._mouth_last_open > self.YAWN_GRACE * 2:
                 self._end_yawn()
+
+            # The face may have left the frame BECAUSE the head fell.
+            lost_head = self._head_lost_while_falling(now)
+            if lost_head is not None:
+                return lost_head
             # Decay the score toward zero so a stale DROWSY does not stick.
             self._smoothed_score *= 0.95
             self._last_state = DrowsinessState.ALERT
@@ -269,6 +325,7 @@ class DrowsinessEngine:
             )
 
         mar = mar or 0.0
+        self._last_face_time = now
 
         # ------------------------------------- MOUTH: yawn detection ---------
         # Checked first, because a yawn changes how we read the eyes.
@@ -305,6 +362,10 @@ class DrowsinessEngine:
         else:
             self._finish_closure(now)
 
+        # ------------------------------------------- HEAD: falling / nodding --
+        head_down, head_duration, rel_pitch, rel_roll = self._update_head(
+            head_pitch, head_tilt, now, yawning=mouth_wide)
+
         self._trim_times(self._blink_times, now)
         self._trim_times(self._yawn_times, now)
         self._trim_intervals(now)
@@ -324,6 +385,7 @@ class DrowsinessEngine:
 
         raw_score = 100.0 * sum(self.weights[k] * v for k, v in contributions.items())
         raw_score = max(raw_score, self._yawn_score_floor(is_yawning, yawn_duration))
+        raw_score = max(raw_score, self._head_score_floor(head_down, head_duration))
         raw_score = max(0.0, min(100.0, raw_score))
 
         # Exponential smoothing: new = a*raw + (1-a)*old.
@@ -334,7 +396,8 @@ class DrowsinessEngine:
 
         # ------------------------------------------------ decide the state ---
         long_yawn = is_yawning and yawn_duration >= self.yawn_alarm_duration
-        urgent = closure_duration >= self.microsleep_duration or long_yawn
+        head_fell = head_down and head_duration >= self.head_drop_duration
+        urgent = closure_duration >= self.microsleep_duration or long_yawn or head_fell
         state = DrowsinessState.DROWSY if urgent else self._classify(
             self._smoothed_score, closure_duration)
 
@@ -360,7 +423,13 @@ class DrowsinessEngine:
             blink_rate=blink_rate,
             yawn_rate=yawn_rate,
             microsleep_count=self.microsleep_count,
-            head_tilt=head_tilt,
+            head_tilt=rel_roll,
+            head_pitch=rel_pitch,
+            head_down=head_down,
+            head_down_duration=head_duration,
+            head_direction=self._head_direction if head_down else "",
+            head_nod_count=self.head_nod_count,
+            head_calibrated=self.head_calibrated,
             face_detected=True,
             face_count=face_count,
             alarm_active=state == DrowsinessState.DROWSY,
@@ -432,6 +501,139 @@ class DrowsinessEngine:
         self._yawn_start = None
         self._raw_open_since = None
         self._counted_current_yawn = False
+
+    # ------------------------------------------------------------- head
+    @property
+    def head_calibrated(self) -> bool:
+        return len(self._pose_samples) >= self.POSE_MIN_SAMPLES
+
+    def _pose_baseline(self) -> Tuple[Optional[float], float]:
+        """This driver's upright (pitch, roll).
+
+        Pitch depends heavily on where the camera sits, so it is not judged at
+        all until calibrated. Roll is 0 for an upright head on any camera, so
+        0 is a safe default until then.
+        """
+        if not self.head_calibrated:
+            return None, 0.0
+        pitches = [p for _, p, _ in self._pose_samples]
+        rolls = [r for _, _, r in self._pose_samples]
+        return float(np.median(pitches)), float(np.median(rolls))
+
+    def _update_head(
+        self, pitch: Optional[float], roll: float, now: float, yawning: bool
+    ) -> Tuple[bool, float, float, float]:
+        """Track head drops. Returns (head_down, duration, rel_pitch, rel_roll)."""
+        base_pitch, base_roll = self._pose_baseline()
+        rel_pitch = pitch - base_pitch if pitch is not None and base_pitch is not None else 0.0
+        rel_roll = roll - base_roll
+
+        # Hysteresis: a dropped head must come clearly back up to count as up.
+        scale = self.HEAD_RELEASE_RATIO if self._head_down_start is not None else 1.0
+        direction = ""
+        if rel_pitch >= self.head_drop_angle * scale:
+            direction = "forward"
+        elif rel_pitch <= -self.head_back_angle * scale and not yawning:
+            direction = "backward"
+        elif abs(rel_roll) >= self.head_side_angle * scale:
+            direction = "sideways"
+
+        # Remember when the head was at least half-way down, so a face that
+        # vanishes mid-fall can be recognised as a fallen head.
+        if (rel_pitch >= self.head_drop_angle * 0.5
+                or abs(rel_roll) >= self.head_side_angle * 0.5):
+            self._head_falling_at = now
+
+        if direction:
+            if self._head_down_start is None:
+                self._head_down_start = now
+                self._counted_current_nod = False
+            self._head_last_down = now
+            self._head_direction = direction
+        elif self._head_down_start is not None and now - self._head_last_down > self.HEAD_GRACE:
+            self._end_head_drop()
+
+        # Learn the upright posture only from a steady, clearly-upright head.
+        if (pitch is not None and self._head_down_start is None
+                and abs(rel_pitch) < self.head_drop_angle * 0.5
+                and abs(rel_roll) < self.head_side_angle * 0.5):
+            self._pose_samples.append((now, pitch, roll))
+            cutoff = now - self.POSE_WINDOW
+            while self._pose_samples and self._pose_samples[0][0] < cutoff:
+                self._pose_samples.popleft()
+
+        duration = self._head_duration()
+        return self._head_down_start is not None, duration, rel_pitch, rel_roll
+
+    def _head_duration(self) -> float:
+        if self._head_down_start is None:
+            return 0.0
+        duration = max(0.0, self._head_last_down - self._head_down_start)
+        if duration >= self.HEAD_NOD_MIN and not self._counted_current_nod:
+            self.head_nod_count += 1
+            self._counted_current_nod = True
+        return duration
+
+    def _end_head_drop(self) -> None:
+        self._head_down_start = None
+        self._head_direction = ""
+        self._counted_current_nod = False
+
+    def _head_lost_while_falling(self, now: float) -> Optional[DrowsinessMetrics]:
+        """Metrics for "the face vanished because the head fell", else None."""
+        if now - self._last_face_time > self.head_lost_hold:
+            self._end_head_drop()
+            return None
+        falling = (self._head_down_start is not None
+                   or self._last_face_time - self._head_falling_at <= self.HEAD_FALL_MEMORY)
+        if not falling:
+            return None
+
+        if self._head_down_start is None:
+            self._head_down_start = self._head_falling_at
+            self._head_direction = "forward"
+            self._counted_current_nod = False
+        self._head_last_down = now
+        duration = self._head_duration()
+
+        raw_score = self._head_score_floor(True, duration)
+        self._smoothed_score = (
+            self.smoothing * raw_score + (1.0 - self.smoothing) * self._smoothed_score
+        )
+        urgent = duration >= self.head_drop_duration
+        state = DrowsinessState.DROWSY if urgent else DrowsinessState.WARNING
+        self._last_state = state
+        self.history.append((now - self.session_start, self._smoothed_score))
+        return DrowsinessMetrics(
+            state=state,
+            score=self._smoothed_score,
+            raw_score=raw_score,
+            longest_closure=self.longest_closure,
+            blink_count=self.blink_count,
+            yawn_count=self.yawn_count,
+            microsleep_count=self.microsleep_count,
+            head_down=True,
+            head_down_duration=duration,
+            head_direction=self._head_direction,
+            head_nod_count=self.head_nod_count,
+            head_calibrated=self.head_calibrated,
+            face_detected=False,
+            alarm_active=urgent,
+            urgent=urgent,
+            perclos=self._perclos(now),
+            ear_threshold=self.active_ear_threshold,
+            calibrated=self.calibrated,
+            contributions={},
+        )
+
+    def _head_score_floor(self, head_down: bool, duration: float) -> float:
+        """Head down -> WARNING at once, climbing toward DROWSY; the exact
+        head_drop_duration rule in update() makes the DROWSY call."""
+        if not head_down:
+            return 0.0
+        progress = min(1.0, duration / max(self.head_drop_duration, 1e-6))
+        low, top = self.warning_score + 2.0, self.drowsy_score - 2.0
+        return low + (top - low) * progress
 
     # ------------------------------------------------------- score channels
     def _perclos_contribution(self, perclos: float) -> float:
@@ -555,6 +757,7 @@ class DrowsinessEngine:
             "total_blinks": self.blink_count,
             "total_yawns": self.yawn_count,
             "microsleeps": self.microsleep_count,
+            "head_nods": self.head_nod_count,
             "longest_closure": self.longest_closure,
             "avg_blink_rate": self.blink_count / (elapsed / 60.0),
             "peak_score": max((s for _, s in self.history), default=0.0),

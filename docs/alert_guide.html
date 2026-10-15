@@ -208,7 +208,7 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
 <header>
   <span class="eyebrow">Driver Drowsiness Detection · user guide</span>
   <h1>Why did the alarm go off?</h1>
-  <p class="lede">The app watches your eyes and mouth through the webcam and turns what it sees into a
+  <p class="lede">The app watches your eyes, mouth and head through the webcam and turns what it sees into a
   <b>drowsiness score from 0 to 100</b>. The score decides which of three colours you see. This page explains,
   in plain words, exactly what raises the score and what sets off the alarm.</p>
   <div class="states">
@@ -223,7 +223,7 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
   <span class="eyebrow">The score</span>
   <h2 id="s-score">One number, three zones</h2>
   <p class="prose">Think of the score like a fuel gauge for tiredness. It sits near 0 while you drive normally and climbs when your
-  eyes stay shut too long or you yawn. The two lines that matter are <b class="num">40</b> and <b class="num">60</b>.</p>
+  eyes stay shut too long, you yawn, or your head drops. The two lines that matter are <b class="num">40</b> and <b class="num">60</b>.</p>
   <div class="band-wrap">
     <div class="band" role="img" aria-label="Score scale: 0 to 39 is ALERT, 40 to 59 is WARNING, 60 to 100 is DROWSY">
       <div class="band-bar"><div class="seg-ok">ALERT</div><div class="seg-warn">WARNING</div><div class="seg-bad">DROWSY + ALARM</div></div>
@@ -237,9 +237,9 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
 
 <section aria-labelledby="s-watch">
   <span class="eyebrow">What the camera measures</span>
-  <h2 id="s-watch">Two measurements: eye opening and mouth opening</h2>
+  <h2 id="s-watch">Three measurements: eye opening, mouth opening and head position</h2>
   <p class="prose">First a face detector (YOLO) finds your face. Then a landmark model (MediaPipe FaceMesh) places 478 points on it.
-  From those points the app measures two simple ratios, about 30 times per second.</p>
+  From those points the app measures two simple ratios and the angle of your head, about 30 times per second.</p>
   <div class="watch">
     <div class="figure">
       <h3>Eyes: EAR (eye aspect ratio)</h3>
@@ -289,12 +289,37 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
       <p class="muted" style="font-size:0.9rem">You can see both live numbers on the Eyes and Mouth cards in the app.</p>
     </div>
   </div>
+  <div class="figure" style="margin-top:20px">
+    <h3>Head: pitch and roll</h3>
+    <svg viewBox="0 0 320 120" role="img" aria-label="An upright head, and a head that has fallen forward by about 30 degrees.">
+      <g stroke="var(--ink)" stroke-width="2" fill="var(--quiet)">
+        <ellipse cx="75" cy="55" rx="28" ry="36"/>
+        <ellipse cx="245" cy="62" rx="28" ry="36" transform="rotate(-30 245 100)"/>
+      </g>
+      <g stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 3">
+        <line x1="75" y1="15" x2="75" y2="95"/>
+        <line x1="245" y1="15" x2="245" y2="100"/>
+        <line x1="208" y1="36" x2="245" y2="100"/>
+      </g>
+      <text x="75" y="113" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--ok)">upright · 0°</text>
+      <text x="262" y="113" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="12" fill="var(--bad)">falling · 30°</text>
+    </svg>
+    <p class="formula">pitch = forward/back lean · roll = sideways lean (forehead → chin line)</p>
+    <p>FaceMesh knows how far each point is from the camera, so the app can tell when your head tips forward onto your chest,
+    back, or onto a shoulder. The angle is measured from <b>your own normal posture</b>, which the app learns in the first
+    second or two, so it works whatever angle the camera sits at.</p>
+    <div class="readings">
+      <div class="reading"><div class="k">Forward</div><div class="v">20°</div></div>
+      <div class="reading"><div class="k">Back / sideways</div><div class="v">30°</div></div>
+    </div>
+    <p class="muted" style="font-size:0.9rem">The Head card shows Upright or Down, both angles, and a ✓ once your posture is learned.</p>
+  </div>
 </section>
 
 <section aria-labelledby="s-instant">
   <span class="eyebrow">The fast rules</span>
-  <h2 id="s-instant">Two things that trigger an alert by the clock</h2>
-  <p class="prose">Most of the time the score builds up slowly. But two situations are timed directly with a stopwatch,
+  <h2 id="s-instant">Three things that trigger an alert by the clock</h2>
+  <p class="prose">Most of the time the score builds up slowly. But three situations are timed directly with a stopwatch,
   because waiting would be dangerous. These are the alerts you will see most often.</p>
 
   <div class="timeline">
@@ -321,9 +346,22 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
     </div></div>
   </div>
 
+  <div class="timeline">
+    <h3>3 · How long your head stays down</h3>
+    <div class="tl-wrap"><div class="tl" role="img" aria-label="Head down: from the moment it drops it shows WARNING; after 1.5 seconds it is DROWSY and the alarm sounds.">
+      <div class="tl-bar">
+        <div class="z-warn" style="flex:1.5"><b>Head dropping</b>WARNING</div>
+        <div class="z-bad" style="flex:1"><b>Head fallen</b>DROWSY + alarm instantly</div>
+      </div>
+      <div class="tl-ticks"><span style="left:0">0 s</span><span style="left:60%">1.5 s</span><span style="left:96%">2.5 s</span></div>
+    </div></div>
+  </div>
+
   <div class="note prose"><b class="tag">Good to know</b>
     <p>Your eyes naturally squeeze shut during a yawn. The app knows this and does <b>not</b> count eye closure while your mouth
-    is wide open, so a yawn never sets off the microsleep alarm by accident.</p></div>
+    is wide open, so a yawn never sets off the microsleep alarm by accident. In the same way, tipping your head back during a yawn is not
+    counted as the head falling. If your head falls so far that the camera loses your face, the app treats it as still down and
+    the alarm keeps sounding.</p></div>
 </section>
 
 <section aria-labelledby="s-recipe">
@@ -453,6 +491,9 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
         <tr><td>Close eyes for 1.2 s or more</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes, instantly</td><td>Microsleep rule.</td></tr>
         <tr><td>Yawn (mouth open 1.2 – 2.5 s)</td><td><span class="pill" style="background:var(--warn)">WARNING</span></td><td>No</td><td>A yawn is an early tiredness sign.</td></tr>
         <tr><td>Keep mouth open 2.5 s or more</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes, instantly</td><td>Long yawn rule.</td></tr>
+        <tr><td>Quick nod, head back up in under 1.5 s</td><td><span class="pill" style="background:var(--warn)">WARNING</span></td><td>No</td><td>Head was down, but not for long enough.</td></tr>
+        <tr><td>Head drops forward or sideways for 1.5 s or more</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes, instantly</td><td>Head-falling rule.</td></tr>
+        <tr><td>Head falls and the face leaves the camera view</td><td><span class="pill" style="background:var(--bad)">DROWSY</span></td><td>Yes</td><td>Treated as still down for up to 8 s.</td></tr>
         <tr><td>Yawn 3 times within a minute</td><td><span class="pill" style="background:var(--warn)">WARNING</span></td><td>No</td><td>Frequent yawning.</td></tr>
         <tr><td>Many slow blinks over a minute</td><td><span class="pill" style="background:var(--warn)">WARNING</span> → <span class="pill" style="background:var(--bad)">DROWSY</span></td><td>When it reaches 60</td><td>Closed-eye time builds up the score.</td></tr>
         <tr><td>Turn away from the camera</td><td><span class="pill" style="background:var(--muted)">NO FACE</span></td><td>No</td><td>Nothing is measured; the score slowly fades.</td></tr>
@@ -467,7 +508,7 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
   <div class="two">
     <ol class="steps">
       <li><p>The status must be <b>DROWSY</b>. WARNING never makes a sound; it only changes the colour.</p></li>
-      <li><p>For a microsleep or a long yawn, the alarm plays <b>immediately</b>. For DROWSY reached through the score, it must last
+      <li><p>For a microsleep, a long yawn or a fallen head, the alarm plays <b>immediately</b>. For DROWSY reached through the score, it must last
       <b class="num">0.6 s</b> first, so a single glitchy frame can't set it off.</p></li>
       <li><p>After it plays, it waits at least <b class="num">3 s</b> before it can play again, so it doesn't stack up.</p></li>
     </ol>
@@ -493,6 +534,8 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
       <li><span class="mark ok">✓</span><p><b>Blinks flagged as closed:</b> keep <i>Auto-calibrate to my eyes</i> on and look
       normally at the camera for two seconds after pressing Start.</p></li>
       <li><span class="mark ok">✓</span><p><b>Microsleep alarm too sensitive:</b> raise <i>Micro-sleep after (s)</i> above 1.2 s.</p></li>
+      <li><span class="mark ok">✓</span><p><b>Head alarm too sensitive or too slow:</b> change <i>Head falling at (degrees)</i> (default 20°) or
+      <i>Alarm when head down for (s)</i> (default 1.5 s). Sit upright for two seconds after pressing Start.</p></li>
     </ul>
   </div>
   <p class="muted prose">All of these are in the sidebar and take effect immediately. The defaults live in <code>config/config.yaml</code>.</p>
@@ -506,8 +549,10 @@ td .pill { font-family: var(--font-display); font-weight: 800; letter-spacing: 0
     <dt>MAR</dt><dd>Mouth aspect ratio. Lip gap divided by mouth width. Large means wide open.</dd>
     <dt>PERCLOS</dt><dd>"Percentage of eye closure": the share of the last minute your eyes spent in closures longer than a blink.
       Road-safety research uses it as one of the best tiredness measures.</dd>
-    <dt>Microsleep</dt><dd>Falling asleep for a second or two without noticing. At 100 km/h a car travels about 33 metres in one second.</dd>
-    <dt>Calibration</dt><dd>The app learning how open your eyes normally are, so the "closed" line fits you.</dd>
+    <dt>Microsleep</dt><dd>Falling asleep for a second or two without noticing. At 100 km/h a car travels about 28 metres in one second.</dd>
+    <dt>Calibration</dt><dd>The app learning how open your eyes normally are, and how you normally hold your head, so the "closed" and "head down" lines fit you.</dd>
+    <dt>Pitch / roll</dt><dd>The head's forward-back lean (pitch) and sideways lean (roll), in degrees from your normal posture.</dd>
+    <dt>Head drop</dt><dd>The head leaving your normal posture by 20° forward, or 30° back or sideways. Lasting 1.5 s, it sounds the alarm.</dd>
     <dt>YOLO</dt><dd>The face detector. It finds where your face is in each camera frame.</dd>
     <dt>FaceMesh</dt><dd>Google's MediaPipe model that places 478 points on the face, including the eyelids and lips.</dd>
   </dl>

@@ -19,7 +19,8 @@ and no manual input anywhere in the system.
 | Eye closure | Eye Aspect Ratio (EAR) per eye |
 | Blink counting | Closures shorter than 0.4 s |
 | Micro-sleep detection | Closures longer than 1.2 s → instant alarm |
-| Yawn detection | Mouth Aspect Ratio (MAR) held above threshold for 0.8 s |
+| Yawn detection | Mouth Aspect Ratio (MAR) held above threshold for 1.2 s → WARNING; 2.5 s → alarm |
+| Head falling / nodding off | 3D head pitch & roll from FaceMesh, compared to the driver's learned upright posture; head down 20° forward (30° back/sideways) for 1.5 s → alarm, even if the face drops out of view |
 | Drowsiness score | Weighted blend of PERCLOS, current closure, yawn rate, blink rate |
 | Attention heatmap | Gaussian blobs over eyes/mouth scaled by live EAR/MAR |
 | Alarm | Synthesised two-tone siren, played off-thread with a cooldown |
@@ -111,7 +112,9 @@ shows a clear error instead of a blank screen.
 | Blink counter | Blink normally | `Blinks` increases, score stays low |
 | Eye closure | Close your eyes and hold | `Eye closure` timer climbs, heatmap turns red over the eyes |
 | **Alarm** | Keep eyes closed past ~1.2 s | Status flips to **DROWSY**, red border, alarm sounds |
-| Yawn | Open your mouth wide for ~1 s | `Yawns` increases, mouth region turns red |
+| Yawn | Open your mouth wide for ~1.2 s | `Yawns` increases, mouth region turns red |
+| Head falling | Sit upright ~2 s, then drop your chin to your chest | Head card shows **Down (forward)**, WARNING at once, alarm after 1.5 s |
+| Head sideways | Lean your head onto a shoulder | Head card shows **Down (sideways)**, alarm after 1.5 s |
 | No driver | Step out of frame | Status shows **NO FACE**, score decays |
 | Multiple faces | Have someone lean in | Largest face is labelled `DRIVER`, others `passenger` |
 
@@ -186,8 +189,8 @@ eyes reopen:
 ### 3. Yawning (MAR)
 
 Mouth Aspect Ratio = lip gap ÷ mouth width. A yawn is a *sustained* high MAR, so
-the mouth must stay open for 0.8 s. This is what stops normal talking from being
-counted as yawning.
+the mouth must stay open for 1.2 s (→ WARNING). Held open for 2.5 s it raises
+the alarm. This is what stops normal talking from being counted as yawning.
 
 ### 4. The drowsiness score
 
@@ -209,8 +212,27 @@ The result is exponentially smoothed so the needle does not flicker.
 **Bands:** `< 40` ALERT · `40–59` WARNING · `≥ 60` DROWSY
 
 **Safety override:** eyes closed longer than the micro-sleep threshold forces
-DROWSY regardless of the score. At 100 km/h a car covers ~33 m per second —
-there is no time to wait for a rolling average.
+DROWSY regardless of the score. At 100 km/h a car covers ~28 m per second —
+there is no time to wait for a rolling average. A falling head (below) and a
+yawn held for 2.5 s do the same.
+
+### 4b. Head falling (nodding off)
+
+FaceMesh gives every landmark a depth `z`. Using the forehead (10) → chin (152)
+axis:
+
+```
+pitch = atan2(z_chin − z_forehead, y_chin − y_forehead)   + = head falling forward
+roll  = atan2(x_chin − x_forehead, y_chin − y_forehead)   ± = leaning sideways
+```
+
+The driver's upright posture is learned as the median pitch/roll over the last
+30 s (needs ~1 s of data), so any camera angle works. Relative to that posture:
+
+- `≥ 20°` forward, `≥ 30°` back (ignored while yawning) or `≥ 30°` sideways → head **down** → at least WARNING
+- head down for `1.5 s` → **DROWSY** + alarm immediately
+- if the face drops out of view while the head was already falling, it is
+  treated as still down (alarm continues for up to 8 s) instead of NO FACE
 
 ### 5. The attention heatmap
 

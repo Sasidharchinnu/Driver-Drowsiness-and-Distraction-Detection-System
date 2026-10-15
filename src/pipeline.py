@@ -220,6 +220,7 @@ class DrowsinessPipeline:
             face_detected=face_found,
             face_count=detections.face_count,
             head_tilt=landmarks.head_tilt if landmarks_ok else 0.0,
+            head_pitch=landmarks.head_pitch if landmarks_ok else None,
         )
 
         # ---- [4b] choose which boxes to draw and heat up ------------------

@@ -45,6 +45,14 @@ drowsiness:
   yawn_alarm_duration: 2.5     # s. Mouth held wide open this long -> DROWSY + alarm.
   frequent_yawns: 3            # this many yawns within a minute -> WARNING.
 
+  # ---- Head falling (nodding off) ----
+  # Angles are measured from this driver's own upright posture, learned live.
+  head_drop_angle: 20          # degrees forward (chin toward chest) = head down
+  head_back_angle: 30          # degrees backward = head down (ignored while yawning)
+  head_side_angle: 30          # degrees sideways = head down
+  head_drop_duration: 1.5      # s. Head down this long -> DROWSY + alarm.
+  head_lost_hold: 8.0          # s. Face vanished while the head was falling -> keep alarming.
+
   # ---- PERCLOS (percentage of eyelid closure over time) ----
   perclos_window: 60.0         # s. Rolling window used for PERCLOS and rates.
   perclos_threshold: 0.20      # 20% closed time over the window = fatigued

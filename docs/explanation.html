@@ -390,6 +390,7 @@
           <li>Blink vs. micro-sleep (duration)</li>
           <li>PERCLOS — closure over a minute</li>
           <li>Blink rate and yawn frequency</li>
+          <li>A head that drops and stays down</li>
         </ul>
       </div>
     </div>
@@ -459,7 +460,7 @@
           more precise, there is less image to process, and FaceMesh cannot wander off to a
           passenger's face — YOLO has already decided who the driver is.
         </p>
-        <div class="stage-out"><b>out →</b> EAR, MAR, eye boxes, mouth box, head tilt · ~5&nbsp;ms</div>
+        <div class="stage-out"><b>out →</b> EAR, MAR, eye boxes, mouth box, head pitch &amp; roll · ~5&nbsp;ms</div>
       </div>
     </div>
 
@@ -470,10 +471,10 @@
         <div class="stage-tech">stateful engine · 60-second rolling window</div>
         <p>
           The only stage that remembers the past. It runs a small state machine that counts
-          blinks, detects micro-sleeps and yawns, and blends four evidence channels into one
-          0–100 score. Detailed in section 04.
+          blinks, detects micro-sleeps, yawns and a falling head, and blends four evidence
+          channels into one 0–100 score. Detailed in section 04.
         </p>
-        <div class="stage-out"><b>out →</b> score, state, blink/yawn counters, PERCLOS</div>
+        <div class="stage-out"><b>out →</b> score, state, blink/yawn/head-drop counters, PERCLOS</div>
       </div>
     </div>
 
@@ -743,13 +744,41 @@
     <p>
       The same idea applied to the mouth: the average lip gap divided by the mouth width.
       A yawn is a large <em>sustained</em> MAR, so the mouth must stay open for
-      <strong>0.8 seconds</strong> before it counts. That duration requirement is what stops
+      <strong>1.2 seconds</strong> before it counts (and the state moves to WARNING). Held
+      open for <strong>2.5 seconds</strong>, it raises the alarm. That duration requirement is what stops
       ordinary talking — which produces short MAR spikes — from being logged as yawning.
     </p>
     <div class="formula">
       <div class="eq">MAR = mean( |p<sub>upper</sub> − p<sub>lower</sub>| ) / |corner<sub>L</sub> − corner<sub>R</sub>|</div>
       <p class="why">Three vertical lip pairs are averaged, which makes the measure robust to a single noisy landmark.</p>
     </div>
+
+    <h3>Head pose: pitch and roll</h3>
+    <p>
+      When sleep wins, the neck muscles relax and the head drops, usually forward onto the
+      chest and sometimes sideways. FaceMesh gives every landmark a depth <code>z</code>
+      (smaller is closer to the camera) as well as <code>x</code> and <code>y</code>. Taking
+      the axis from the forehead (landmark 10) to the chin (landmark 152) gives two angles.
+    </p>
+    <div class="formula">
+      <div class="eq">pitch = atan2( z<sub>chin</sub> − z<sub>forehead</sub> , y<sub>chin</sub> − y<sub>forehead</sub> )</div>
+      <div class="eq">roll = atan2( x<sub>chin</sub> − x<sub>forehead</sub> , y<sub>chin</sub> − y<sub>forehead</sub> )</div>
+      <p class="why">When the head falls forward the forehead comes toward the camera and the chin moves away, so pitch rises steeply.</p>
+    </div>
+    <p>
+      Every camera sits at a different angle, so the driver's <em>upright</em> posture is learned
+      as the median pitch and roll over the last 30 seconds (it needs about one second of
+      data). Relative to that posture, the head counts as <strong>down</strong> at
+      <strong>20°</strong> forward, <strong>30°</strong> back (ignored during a yawn) or
+      <strong>30°</strong> sideways. Down at all means at least
+      <span class="chip chip-warning">WARNING</span>; down for <strong>1.5 seconds</strong>
+      means <span class="chip chip-drowsy">DROWSY</span> and the alarm.
+    </p>
+    <p>
+      A fully fallen head often drops out of the camera's view. If the face disappears while
+      the head was already half-way down, the engine treats it as still down for up to
+      8 seconds, instead of reporting NO FACE and staying silent.
+    </p>
   </section>
 
   <!-- ======================= 4 ======================= -->
@@ -835,10 +864,11 @@
       <p>
         If the eyes stay closed longer than the micro-sleep threshold, the state becomes
         <span class="chip chip-drowsy">DROWSY</span> <strong>immediately</strong>, regardless
-        of what the weighted score says. At 100&nbsp;km/h a car travels about 33&nbsp;metres
+        of what the weighted score says. At 100&nbsp;km/h a car travels about 28&nbsp;metres
         every second — there is no time to wait for a rolling average to catch up. A weighted
         score is the right tool for gradual fatigue and the wrong tool for an emergency, so
-        the emergency gets its own direct path.
+        the emergency gets its own direct path. The same direct path applies to a head that
+        stays down for 1.5&nbsp;seconds and to a mouth held open for 2.5&nbsp;seconds.
       </p>
     </div>
 
@@ -855,7 +885,7 @@
         <tbody>
           <tr><td class="num">0 – 39</td><td><span class="chip chip-alert">ALERT</span></td><td>Normal driving. Blinking within the healthy range.</td></tr>
           <tr><td class="num">40 – 59</td><td><span class="chip chip-warning">WARNING</span></td><td>Early fatigue: longer blinks, occasional yawning.</td></tr>
-          <tr><td class="num">60 – 100</td><td><span class="chip chip-drowsy">DROWSY</span></td><td>Alarm sounds. Sustained closure or a micro-sleep.</td></tr>
+          <tr><td class="num">60 – 100</td><td><span class="chip chip-drowsy">DROWSY</span></td><td>Alarm sounds. Sustained closure, a micro-sleep, a long yawn or a falling head.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1109,9 +1139,11 @@ python training/train.py --epochs 100 --install</code></pre>
         Sunglasses defeat EAR entirely — no eyelid landmarks means no measurement. Very low
         light degrades both YOLO and FaceMesh; an infrared camera is the real-world answer.
         Extreme head rotation hides one eye. The largest-face heuristic assumes the driver is
-        nearest the camera, which a rear-seat mounting would break. And the thresholds are
-        population defaults, not per-driver calibration — a production system would learn each
-        driver's personal EAR baseline during the first minute of a trip.
+        nearest the camera, which a rear-seat mounting would break. The system does learn each
+        driver's open-eye EAR and upright head posture live, but those baselines take a second
+        or two to settle, so the driver should sit normally right after pressing Start. Looking
+        down at a phone for 1.5&nbsp;seconds also counts as a head drop, which is arguably
+        desirable but is not distinguished from sleep.
       </p>
     </div>
   </section>
@@ -1136,7 +1168,7 @@ python training/train.py --epochs 100 --install</code></pre>
 │   ├── config.py           <span class="cmt">loads + validates the YAML</span>
 │   ├── camera.py           <span class="cmt">threaded capture, permission errors  → §2.1</span>
 │   ├── detector.py         <span class="cmt">YOLO wrapper, device selection       → §2.2</span>
-│   ├── landmarks.py        <span class="cmt">FaceMesh, EAR and MAR maths          → §3</span>
+│   ├── landmarks.py        <span class="cmt">FaceMesh, EAR, MAR, head pitch/roll   → §3</span>
 │   ├── drowsiness.py       <span class="cmt">the scoring state machine            → §4</span>
 │   ├── heatmap.py          <span class="cmt">Gaussian attention map               → §5</span>
 │   ├── alarm.py            <span class="cmt">tone synthesis + playback            → §2.7</span>
@@ -1167,7 +1199,9 @@ streamlit run app.py              <span class="cmt"># the webcam starts by itsel
           <tr><td>Blink normally</td><td>Blink counter rises; score stays low</td></tr>
           <tr><td>Close your eyes and hold</td><td>Closure timer climbs; heatmap goes red over the eyes</td></tr>
           <tr><td>Hold past 1.2 seconds</td><td><span class="chip chip-drowsy">DROWSY</span>, red border, alarm sounds</td></tr>
-          <tr><td>Yawn for about a second</td><td>Yawn counter rises; mouth region turns red</td></tr>
+          <tr><td>Yawn for about 1.2 seconds</td><td>Yawn counter rises; mouth region turns red</td></tr>
+          <tr><td>Drop your chin to your chest</td><td>Head card shows Down (forward); alarm after 1.5 s</td></tr>
+          <tr><td>Lean your head onto a shoulder</td><td>Head card shows Down (sideways); alarm after 1.5 s</td></tr>
           <tr><td>Talk normally</td><td>Yawn counter does <strong>not</strong> move — the duration test rejects it</td></tr>
           <tr><td>Step out of frame</td><td><span class="chip chip-alert">NO FACE</span>; score decays; counters preserved</td></tr>
         </tbody>

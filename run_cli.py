@@ -156,6 +156,7 @@ def main() -> int:
     print(f"  Blinks          {summary['total_blinks']}")
     print(f"  Yawns           {summary['total_yawns']}")
     print(f"  Micro-sleeps    {summary['microsleeps']}")
+    print(f"  Head drops      {summary['head_nods']}")
     print(f"  Longest closure {summary['longest_closure']:.2f} s")
     print(f"  Avg blink rate  {summary['avg_blink_rate']:.1f} /min")
     print(f"  Peak score      {summary['peak_score']:.1f}")

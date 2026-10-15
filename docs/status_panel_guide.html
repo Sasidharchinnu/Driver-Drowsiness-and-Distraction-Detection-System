@@ -151,7 +151,7 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
           <div class="part" data-part="6"><span class="badge">6</span>
             <div class="tile"><div class="k">PERCLOS</div><div class="v" id="t-per-v">2%</div><div class="h">eyes-closed time, last 60s</div></div></div>
           <div class="part" data-part="7"><span class="badge">7</span>
-            <div class="tile"><div class="k">Head tilt</div><div class="v" id="t-tilt-v">+2°</div><div class="h" id="t-tilt-h">1 face(s) in view</div></div></div>
+            <div class="tile" id="t-head"><div class="k">Head</div><div class="v" id="t-tilt-v">Upright</div><div class="h" id="t-tilt-h">pitch +0° · roll +2° ✓</div></div></div>
         </div>
       </div>
 
@@ -183,6 +183,7 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
         <p>Shown only in WARNING or DROWSY. It names the <b>single biggest reason</b>, checked in this order:</p>
         <ul>
           <li>👁️ <b>Eyes closed for X s</b>: the eyes are shut longer than a normal blink (0.4 s).</li>
+          <li>😴 <b>Head falling forward / sideways for X s (alarm at 1.5 s)</b>: the head has dropped from its normal posture.</li>
           <li>🥱 <b>Mouth open for X s (alarm at 2.5 s)</b>: a yawn is in progress.</li>
           <li>🥱 <b>Frequent yawning: N in the last minute</b>: 3 or more yawns.</li>
           <li>👁️ <b>Eyes closed N% of the last minute</b>: the PERCLOS measure is high.</li>
@@ -221,11 +222,13 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
         </ul>
       </div>
       <div class="card" data-part="7" tabindex="0">
-        <span class="n">7</span><h3>Head tilt tile</h3>
-        <p>How far the head leans sideways, in degrees (+ is one side, − the other). Below it is how many faces the camera sees.</p>
+        <span class="n">7</span><h3>Head tile</h3>
+        <p><b>Upright</b> or <b>Down (forward / backward / sideways)</b>. The top edge turns red while the head is down.</p>
         <ul>
-          <li>This is <b>for information only</b>: it does not change the score.</li>
-          <li>A head slowly drooping to one side is a useful visual hint. "0 face(s)" explains a NO FACE banner.</li>
+          <li><code>pitch +3° · roll +2° ✓</code>: pitch is the forward (+) or backward (−) lean, roll the sideways lean, both measured from <i>your</i> normal posture.</li>
+          <li>The <b>✓</b> appears after about a second, once the app has learned how you normally hold your head. Until then it says <i>learning posture</i>.</li>
+          <li>Head down means <b>20°</b> forward, or <b>30°</b> back or sideways. That gives at least WARNING straight away.</li>
+          <li>Down for <b>1.5 s</b>: DROWSY and the alarm, even if the head falls so far the camera loses the face.</li>
         </ul>
       </div>
     </div>
@@ -243,6 +246,8 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
       <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 🥱 Frequent yawning</td><td>3 or more yawns within one minute.</td><td>Plan a break soon.</td></tr>
       <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 👁️ Eyes closed N%</td><td>The eyes have been closing a lot over the last minute.</td><td>Plan a break soon.</td></tr>
       <tr><td><span class="pill" style="background:var(--s-bad)">DROWSY</span> + 🔊 Eyes closed</td><td>Microsleep: eyes shut 1.2 s or longer.</td><td>Pull over safely and rest.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-warn)">WARNING</span> + 😴 Head falling</td><td>The head has dropped from its normal posture, for less than 1.5 s so far.</td><td>Lift your head; take it as a serious sign.</td></tr>
+      <tr><td><span class="pill" style="background:var(--s-bad)">DROWSY</span> + 🔊 Head falling</td><td>Head down 1.5 s or longer: nodding off.</td><td>Pull over safely and rest.</td></tr>
       <tr><td><span class="pill" style="background:var(--s-bad)">DROWSY</span> + 🔊 Mouth open</td><td>Mouth held wide open 2.5 s or longer.</td><td>Pull over safely and rest.</td></tr>
       <tr><td><span class="pill" style="background:var(--s-none)">NO FACE</span></td><td>The camera cannot find a face: looking away, bad light, or out of frame.</td><td>Face the camera; add light.</td></tr>
     </tbody>
@@ -252,6 +257,7 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
 
 <footer class="muted">
   Numbers match <code>config/config.yaml</code>: blink 0.4 s, microsleep 1.2 s, yawn 1.2 s, yawn alarm 2.5 s,
+  head drop 20° forward / 30° back or sideways, head alarm 1.5 s,
   WARNING at 40, DROWSY at 60. The player above uses illustrative readings that follow the same rules.
   For how the score itself is calculated, see <code>docs/alert_guide.html</code>.
 </footer>
@@ -269,7 +275,7 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
 
   // Each scenario returns the panel readings at time t (seconds).
   const base = { state: "ALERT", score: 3, eyes: false, shut: 0, ear: 0.30, yawn: false, mar: 0.18, ydur: 0,
-                 perclos: 2, tilt: 2, faces: 1, msg: null, alarms: 0 };
+                 perclos: 2, tilt: 2, pitch: 0, hdown: false, hdir: "", faces: 1, msg: null, alarms: 0 };
   const lerp = (a, b, k) => a + (b - a) * Math.max(0, Math.min(1, k));
   const eyesShut = (t, from, to) => t >= from && t < to ? t - from : 0;
 
@@ -324,10 +330,22 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
           if (r.state === "WARNING") r.msg = ["warn", "⚠️ <b>Fatigue sign</b> — 🥱 1 yawn in the last minute"]; }
         return r;
       }, say: t => t < 1 ? "Mouth closed…" : t < 2.2 ? "Mouth opens wide…" : t < 3.5 ? "1.2 s: a yawn, so WARNING." : t < 4.5 ? "2.5 s: DROWSY and the alarm, exactly on time." : "Mouth closes; the panel settles back down." },
+    { id: "head", name: "Head falls", len: 7, f: t => {
+        const pitch = t < 1 ? 0 : t < 1.4 ? lerp(0, 32, (t - 1) / 0.4) : t < 4.8 ? 32 : t < 5.2 ? lerp(32, 0, (t - 4.8) / 0.4) : 0;
+        const d = pitch >= 20 && t < 5.2 ? t - 1.25 : 0;
+        let r = { ...base, pitch, hdown: d > 0, hdir: d > 0 ? "forward" : "" };
+        if (d > 0) { r.state = "WARNING"; r.score = Math.round(42 + Math.min(1, d / 1.5) * 16);
+          r.msg = ["warn", `⚠️ <b>Fatigue sign</b> — 😴 Head falling forward for <b>${d.toFixed(1)}s</b> (alarm at 1.5s)`]; }
+        if (d >= 1.5) { r.state = "DROWSY"; r.alarms = 1;
+          r.msg = ["err", `🔊 <b>ALARM</b> — 😴 Head falling forward for <b>${d.toFixed(1)}s</b> (alarm at 1.5s) · triggered 1× this session`]; }
+        if (t >= 5.2) { r.score = Math.round(Math.max(10, 58 - (t - 5.2) * 16)); r.state = r.score >= WARN - 6 ? "WARNING" : "ALERT";
+          if (r.state === "WARNING") r.msg = ["warn", "⚠️ <b>Fatigue sign</b> — 😴 Head just came back up"]; }
+        return r;
+      }, say: t => t < 1 ? "Sitting upright…" : t < 1.25 ? "The head starts to drop forward…" : t < 2.75 ? "Past 20° from normal posture: the Head tile shows Down (forward) and the panel goes to WARNING at once." : t < 4.8 ? "1.5 s with the head down: DROWSY and the alarm, instantly." : "Head back up; the panel settles back down." },
     { id: "away", name: "Look away", len: 5, f: t => {
         const gone = t >= 1.2 && t < 3.8;
         return gone ? { ...base, state: "NO FACE", faces: 0, score: 3, ear: 0, mar: 0, noface: true } : { ...base, tilt: t < 1.2 ? 2 : 14 * (1 - (t - 3.8)) + 2 };
-      }, say: t => t < 1.2 ? "Facing the camera…" : t < 3.8 ? "No face found: grey NO FACE banner and 0 face(s) in the Head tilt tile. Nothing is scored while the face is gone." : "Face found again; monitoring resumes." },
+      }, say: t => t < 1.2 ? "Facing the camera…" : t < 3.8 ? "No face found: grey NO FACE banner. The head did not fall first, so nothing is scored while the face is gone." : "Face found again; monitoring resumes." },
   ];
 
   const $ = id => document.getElementById(id);
@@ -372,8 +390,10 @@ footer { padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.9rem
     $("t-mouth-v").textContent = r.noface ? "—" : r.yawn ? "Yawning" : "Normal";
     $("t-mouth-h").innerHTML = r.noface ? "no face to measure" : `MAR ${r.mar.toFixed(2)} · yawn &gt; ${MAR_LINE.toFixed(2)}`;
     $("t-per-v").textContent = `${Math.round(r.perclos)}%`;
-    $("t-tilt-v").textContent = r.noface ? "—" : `${r.tilt >= 0 ? "+" : ""}${Math.round(r.tilt)}°`;
-    $("t-tilt-h").textContent = `${r.faces} face(s) in view`;
+    const sgn = v => `${v >= 0 ? "+" : ""}${Math.round(v)}°`;
+    $("t-head").style.setProperty("--edge", r.hdown ? "#ef4444" : "#334155");
+    $("t-tilt-v").textContent = r.noface ? "—" : r.hdown ? `Down (${r.hdir})` : "Upright";
+    $("t-tilt-h").textContent = r.noface ? "no face to measure" : `pitch ${sgn(r.pitch)} · roll ${sgn(r.tilt)} ✓`;
   }
 
   // ---- player ----

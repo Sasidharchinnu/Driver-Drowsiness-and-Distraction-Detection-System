@@ -203,6 +203,8 @@ class LiveSession:
             p.engine.mar_threshold = settings["mar_threshold"]
             p.engine.yawn_alarm_duration = settings["yawn_alarm_duration"]
             p.engine.microsleep_duration = settings["microsleep_duration"]
+            p.engine.head_drop_angle = settings["head_drop_angle"]
+            p.engine.head_drop_duration = settings["head_drop_duration"]
             p.detector.confidence = settings["yolo_confidence"]
             p.heatmap.alpha = settings["heatmap_alpha"]
             p.cfg.heatmap.enabled = settings["show_heatmap"]
@@ -411,6 +413,16 @@ with st.sidebar:
             "Micro-sleep after (s)", 0.5, 4.0, float(cfg.drowsiness.microsleep_duration), 0.1,
             help="Eyes closed longer than this forces DROWSY immediately.",
         )
+        head_drop_angle = st.slider(
+            "Head falling at (degrees)", 10, 45,
+            int(cfg.drowsiness.get("head_drop_angle", 20)), 1,
+            help="How far the head must drop forward from your normal posture.",
+        )
+        head_drop_duration = st.slider(
+            "Alarm when head down for (s)", 0.5, 4.0,
+            float(cfg.drowsiness.get("head_drop_duration", 1.5)), 0.1,
+            help="Head dropped forward, back or sideways this long raises the alarm.",
+        )
         yolo_confidence = st.slider(
             "YOLO confidence", 0.10, 0.90, float(cfg.model.confidence), 0.05,
         )
@@ -467,6 +479,8 @@ live.apply_settings(
         mar_threshold=mar_threshold,
         yawn_alarm_duration=yawn_alarm_duration,
         microsleep_duration=microsleep_duration,
+        head_drop_angle=float(head_drop_angle),
+        head_drop_duration=head_drop_duration,
         yolo_confidence=yolo_confidence,
         heatmap_alpha=heatmap_alpha,
         show_heatmap=show_heatmap,
@@ -592,7 +606,10 @@ def status_panel() -> None:
         st.error(live.error)
     elif m.state in (DrowsinessState.DROWSY, DrowsinessState.WARNING):
         engine = live.pipeline.engine
-        if m.closure_duration > engine.blink_max_duration:
+        if m.head_down:
+            reason = (f"😴 Head falling {m.head_direction} for **{m.head_down_duration:.1f}s** "
+                      f"(alarm at {engine.head_drop_duration:.1f}s)")
+        elif m.closure_duration > engine.blink_max_duration:
             reason = f"👁️ Eyes closed for **{m.closure_duration:.1f}s**"
         elif m.is_yawning:
             reason = (f"🥱 Mouth open for **{m.yawn_duration:.1f}s** "
@@ -625,7 +642,10 @@ def status_panel() -> None:
     st.write("")
     render_tiles([
         tile("PERCLOS", f"{m.perclos * 100:.0f}%", "eyes-closed time, last 60s"),
-        tile("Head tilt", f"{m.head_tilt:+.0f}°", f"{m.face_count} face(s) in view"),
+        tile("Head", f"Down ({m.head_direction})" if m.head_down else "Upright",
+             f"pitch {m.head_pitch:+.0f}° · roll {m.head_tilt:+.0f}°"
+             + (" ✓" if m.head_calibrated else " · learning posture"),
+             "#ef4444" if m.head_down else "#334155"),
     ])
 
 
@@ -650,6 +670,8 @@ def details_panel() -> None:
                  "#f59e0b" if m.yawn_count else "#334155"),
             tile("Micro-sleeps", f"{m.microsleep_count}", f"longest {m.longest_closure:.1f}s",
                  "#ef4444" if m.microsleep_count else "#334155"),
+            tile("Head drops", f"{m.head_nod_count}", "nodding off",
+                 "#ef4444" if m.head_nod_count else "#334155"),
             tile("Alarms", f"{snapshot.alarm_count}", "this session",
                  "#ef4444" if snapshot.alarm_count else "#334155"),
             tile("Speed", f"{snapshot.fps:.0f} FPS", f"YOLO {snapshot.inference_ms:.0f} ms",
@@ -664,6 +686,7 @@ def details_panel() -> None:
                 tile("Blinks", f"{last['total_blinks']}"),
                 tile("Yawns", f"{last['total_yawns']}"),
                 tile("Micro-sleeps", f"{last['microsleeps']}"),
+                tile("Head drops", f"{last.get('head_nods', 0)}"),
                 tile("Longest closure", f"{last['longest_closure']:.1f}s"),
                 tile("Peak score", f"{last['peak_score']:.0f}"),
             ])
@@ -713,8 +736,9 @@ def details_panel() -> None:
 | 2. Landmarks | **MediaPipe FaceMesh** places 478 points on that face |
 | 3. Eyes | **EAR** (eye aspect ratio) below **{engine.active_ear_threshold:.2f}** = eye closed{" (calibrated to your eyes)" if engine.calibrated else ""}. Blinks under {engine.blink_max_duration:.1f}s never raise the score |
 | 4. Mouth | **MAR** (mouth aspect ratio) above **{engine.mar_threshold:.2f}** for {engine.yawn_min_duration:.1f}s = yawn → **WARNING**. Held open {engine.yawn_alarm_duration:.1f}s → **DROWSY + alarm**. 3 yawns in a minute → WARNING |
-| 5. Score | PERCLOS, current closure, yawns and blink rate become a 0–100 score |
-| 6. Alarm | Score ≥ **{engine.drowsy_score:.0f}**, eyes shut > **{engine.microsleep_duration:.1f}s**, or mouth open > **{engine.yawn_alarm_duration:.1f}s** sounds the alarm |
+| 5. Head | Head drops **{engine.head_drop_angle:.0f}°** forward (or {engine.head_back_angle:.0f}° back / {engine.head_side_angle:.0f}° sideways) from your normal posture → **WARNING**. Down for {engine.head_drop_duration:.1f}s → **DROWSY + alarm**, even if the face falls out of view |
+| 6. Score | PERCLOS, current closure, yawns and blink rate become a 0–100 score |
+| 7. Alarm | Score ≥ **{engine.drowsy_score:.0f}**, eyes shut > **{engine.microsleep_duration:.1f}s**, mouth open > **{engine.yawn_alarm_duration:.1f}s**, or head down > **{engine.head_drop_duration:.1f}s** sounds the alarm |
 """
         )
 

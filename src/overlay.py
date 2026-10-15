@@ -206,7 +206,7 @@ def draw_hud(frame: np.ndarray, metrics: DrowsinessMetrics, fps: float) -> np.nd
     height, width = frame.shape[:2]
 
     # --- translucent panel, drawn by blending a filled rect over a copy ---
-    panel_w, panel_h = 232, 150
+    panel_w, panel_h = 232, 169
     overlay = frame.copy()
     cv2.rectangle(overlay, (10, 10), (10 + panel_w, 10 + panel_h), PANEL, cv2.FILLED)
     cv2.addWeighted(overlay, 0.62, frame, 0.38, 0, frame)
@@ -225,6 +225,7 @@ def draw_hud(frame: np.ndarray, metrics: DrowsinessMetrics, fps: float) -> np.nd
         f"Closed {metrics.closure_duration:4.1f}s  PERCLOS {metrics.perclos * 100:4.1f}%",
         f"Blinks {metrics.blink_count:<4d} Yawns {metrics.yawn_count}",
         f"Micro-sleeps {metrics.microsleep_count:<3d} FPS {fps:4.1f}",
+        f"Head P{metrics.head_pitch:+4.0f} R{metrics.head_tilt:+4.0f}  Drops {metrics.head_nod_count}",
     ]
     for index, row in enumerate(rows):
         cv2.putText(frame, row, (20, 74 + index * 19), FONT, 0.42, WHITE, 1, cv2.LINE_AA)
@@ -232,7 +233,8 @@ def draw_hud(frame: np.ndarray, metrics: DrowsinessMetrics, fps: float) -> np.nd
     # --- full-width banner when the alarm is live ---
     if metrics.state == DrowsinessState.DROWSY:
         cv2.rectangle(frame, (0, 0), (width - 1, height - 1), RED, 6)
-        banner = "!! WAKE UP - DROWSINESS DETECTED !!"
+        banner = ("!! WAKE UP - HEAD FALLING !!" if metrics.head_down
+                  else "!! WAKE UP - DROWSINESS DETECTED !!")
         (tw, th), _ = cv2.getTextSize(banner, FONT, 0.78, 2)
         bx = (width - tw) // 2
         cv2.rectangle(frame, (bx - 12, height - 58), (bx + tw + 12, height - 18), RED, cv2.FILLED)

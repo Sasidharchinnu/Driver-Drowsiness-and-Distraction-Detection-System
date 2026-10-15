@@ -30,6 +30,20 @@ MAR - Mouth Aspect Ratio
 The same idea for the mouth: vertical lip opening divided by mouth width.
 A yawn is a big, sustained MAR. Talking gives short MAR spikes, which is why
 the drowsiness engine also requires a minimum duration (see config.yaml).
+
+Head pose - pitch and roll
+--------------------------
+When a driver nods off the head falls: forward onto the chest, or sideways.
+FaceMesh gives every landmark a depth (z) as well as x/y, so we take the
+forehead -> chin axis in 3D and measure two angles:
+
+  * pitch = how far that axis leans toward / away from the camera.
+            Chin moving back and forehead forward (head falling onto the chest)
+            makes it POSITIVE; tilting the head back makes it negative.
+  * roll  = how far it leans left / right in the image plane.
+
+Both are absolute angles; the drowsiness engine compares them against this
+driver's own upright posture, because every camera sits at a different angle.
 """
 
 from __future__ import annotations
@@ -79,7 +93,8 @@ class LandmarkResult:
     left_eye_center: Optional[Tuple[int, int]] = None
     right_eye_center: Optional[Tuple[int, int]] = None
     mouth_center: Optional[Tuple[int, int]] = None
-    head_tilt: float = 0.0           # degrees; 0 = upright
+    head_tilt: float = 0.0           # roll, degrees; 0 = upright
+    head_pitch: float = 0.0          # degrees; positive = head dropping forward
     points: List[Tuple[int, int]] = field(default_factory=list)  # all landmarks, for drawing
 
 
@@ -198,6 +213,9 @@ class FaceMeshAnalyzer:
             [[lm.x * crop_w + offset_x, lm.y * crop_h + offset_y] for lm in landmarks],
             dtype=np.float32,
         )
+        # Depth is normalised on roughly the same scale as x, so scale it by
+        # the crop width to get pixel-like units comparable to x / y.
+        depth = np.array([lm.z * crop_w for lm in landmarks], dtype=np.float32)
 
         result.found = True
         result.left_ear = compute_ear(points, LEFT_EYE_EAR)
@@ -216,6 +234,7 @@ class FaceMeshAnalyzer:
         result.right_eye_center = _center_of(points, RIGHT_EYE_CONTOUR)
         result.mouth_center = _center_of(points, MOUTH_CONTOUR)
         result.head_tilt = _head_tilt(points)
+        result.head_pitch = _head_pitch(points, depth)
         result.points = [(int(x), int(y)) for x, y in points]
 
         return result
@@ -257,3 +276,22 @@ def _head_tilt(points: np.ndarray) -> float:
     if abs(dy) < 1e-6:
         return 0.0
     return float(np.degrees(np.arctan2(dx, dy)))
+
+
+def _head_pitch(points: np.ndarray, depth: np.ndarray) -> float:
+    """Forward / backward lean of the forehead-chin axis, in degrees.
+
+    MediaPipe's z gets SMALLER toward the camera. When the head falls forward
+    the forehead comes toward the camera and the chin moves away, so
+    z_chin - z_forehead grows while the on-screen height of the face shrinks.
+    atan2 of those two gives an angle that keeps working up to ~90 degrees.
+    """
+    try:
+        forehead, chin = points[FOREHEAD], points[CHIN]
+        dz = float(depth[CHIN] - depth[FOREHEAD])
+    except IndexError:
+        return 0.0
+    dy = float(chin[1] - forehead[1])
+    if abs(dy) < 1e-6 and abs(dz) < 1e-6:
+        return 0.0
+    return float(np.degrees(np.arctan2(dz, dy)))

@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Driver Drowsiness Detection Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single readable report column (cover, numbered chapters), wide tables and diagrams scroll inside their own boxes */
+:root {
+  --bg: #f5f6f8;
+  --paper: #ffffff;
+  --ink: #18202c;
+  --muted: #5a6474;
+  --rule: #dde1e7;
+  --accent: #1d5d86;
+  --accent-soft: #e4eef5;
+  --ok: #1f7a4d;
+  --ok-soft: #e3f3ea;
+  --warn: #a86400;
+  --warn-soft: #fbf0dc;
+  --bad: #b3261e;
+  --bad-soft: #fbe5e3;
+  --code-bg: #eef1f5;
+  --display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141b; --paper: #161d27; --ink: #e5e9ef; --muted: #9aa4b2; --rule: #2a3442;
+    --accent: #7db8de; --accent-soft: #1b2d3b;
+    --ok: #5cc794; --ok-soft: #16302a; --warn: #e5a54a; --warn-soft: #362a16;
+    --bad: #f07a70; --bad-soft: #3a1f1d; --code-bg: #1d2531; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f141b; --paper: #161d27; --ink: #e5e9ef; --muted: #9aa4b2; --rule: #2a3442;
+  --accent: #7db8de; --accent-soft: #1b2d3b;
+  --ok: #5cc794; --ok-soft: #16302a; --warn: #e5a54a; --warn-soft: #362a16;
+  --bad: #f07a70; --bad-soft: #3a1f1d; --code-bg: #1d2531; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 16px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.report {
+  max-width: 880px; margin: 0 auto; background: var(--paper);
+  border: 1px solid var(--rule); border-radius: 6px;
+  padding: clamp(20px, 5vw, 56px);
+  display: flex; flex-direction: column; gap: 44px;
+}
+h1, h2, h3 { font-family: var(--display); font-weight: 650; text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.7rem); }
+h2 { font-size: 1.55rem; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font-family: var(--mono); font-size: 0.95rem; color: var(--accent); font-weight: 500; }
+h3 { font-size: 1.15rem; margin-top: 8px; }
+p { margin: 0; max-width: 68ch; }
+section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+section + section { border-top: 1px solid var(--rule); padding-top: 40px; }
+.sub { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+a { color: var(--accent); }
+ul, ol { margin: 0; padding-left: 1.3em; max-width: 68ch; }
+li + li { margin-top: 4px; }
+
+/* cover */
+.cover { display: flex; flex-direction: column; gap: 18px; border-bottom: 3px double var(--rule); padding-bottom: 32px; }
+.eyebrow { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 24px; }
+.meta div { display: flex; flex-direction: column; }
+.meta .k { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.meta .v { font-weight: 600; }
+.abstract { background: var(--accent-soft); border-radius: 4px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+.abstract strong.lbl { font-family: var(--display); font-size: 1.05rem; }
+.toc { columns: 2 220px; column-gap: 32px; padding-left: 1.3em; font-size: 0.95rem; }
+
+/* formula blocks */
+.formula {
+  font-family: var(--mono); background: var(--code-bg); border-radius: 4px;
+  padding: 14px 18px; overflow-x: auto; white-space: pre; line-height: 1.55; font-size: 0.9rem;
+}
+.formula .c { color: var(--muted); }
+
+/* metric cards */
+.metric { border: 1px solid var(--rule); border-radius: 5px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.metric header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
+.metric header h3 { margin: 0; }
+.tag { font-family: var(--mono); font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.tag.new { background: var(--ok-soft); color: var(--ok); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.fact { background: var(--bg); border-radius: 4px; padding: 8px 12px; display: flex; flex-direction: column; }
+.fact .k { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.fact .v { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* pipeline */
+.pipe { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; counter-reset: step; max-width: none; }
+.pipe li { margin: 0; border: 1px solid var(--rule); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 4px; counter-increment: step; font-size: 0.9rem; }
+.pipe li::before { content: "Stage " counter(step); font-family: var(--mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; }
+.pipe b { font-size: 0.98rem; }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { background: var(--bg); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); white-space: nowrap; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.75rem; font-weight: 500; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.alert { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.drowsy { background: var(--bad-soft); color: var(--bad); }
+.pill.none { background: var(--code-bg); color: var(--muted); }
+
+/* figures */
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+figcaption { font-size: 0.85rem; color: var(--muted); }
+.svgbox { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); }
+svg text { font-family: var(--body); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; align-items: start; }
+.two > * { min-width: 0; }
+
+/* calculator */
+.calc { border: 1px solid var(--rule); border-radius: 5px; padding: 18px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.calc .inputs { display: flex; flex-direction: column; gap: 12px; }
+.calc label { display: flex; flex-direction: column; gap: 2px; font-size: 0.88rem; }
+.calc label span.row { display: flex; justify-content: space-between; gap: 8px; }
+.calc output { font-family: var(--mono); color: var(--accent); }
+.calc input[type=range] { width: 100%; accent-color: var(--accent); }
+.calc input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.result { display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+.big { font-family: var(--display); font-size: 3rem; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums; }
+.bar { height: 10px; border-radius: 5px; background: var(--code-bg); position: relative; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); width: 0; transition: width .2s; }
+.bands { position: relative; height: 18px; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+.bands span { position: absolute; transform: translateX(-50%); }
+.breakdown { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); white-space: pre; overflow-x: auto; }
+
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; border-radius: 0 4px 4px 0; font-size: 0.92rem; }
+.refs { font-size: 0.9rem; }
+.refs li { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+</head>
+<body>
+
+<article class="report">
+
+<header class="cover">
+  <div class="eyebrow">Project report · Computer vision</div>
+  <h1>Driver Drowsiness Detection with YOLO, Face Landmarks and Head-Pose Tracking</h1>
+  <div class="meta">
+    <div><span class="k">Submitted by</span><span class="v">Kalluru Sasidhar Reddy</span></div>
+    <div><span class="k">Date</span><span class="v">15 October 2026</span></div>
+    <div><span class="k">Platform</span><span class="v">Python 3.11 · Streamlit · OpenCV</span></div>
+    <div><span class="k">Models</span><span class="v">YOLO11n-face · MediaPipe FaceMesh</span></div>
+  </div>
+  <div class="abstract">
+    <strong class="lbl">Abstract</strong>
+    <p>This project is a real-time driver monitoring system that runs on a live webcam. YOLO finds the driver's face, MediaPipe FaceMesh places 478 landmarks on it, and from those points the system measures eye closure (EAR), mouth opening (MAR), and head pose (pitch and roll). A state machine turns these measurements into a 0–100 drowsiness score and one of three states: ALERT, WARNING or DROWSY. An audible alarm sounds for a microsleep (eyes shut ≥ 1.2 s), a long yawn (mouth open ≥ 2.5 s), a falling head (head down ≥ 1.5 s), or a score of 60 or more held for 0.6 s. This report explains every metric, the formula behind it, the exact time at which each alarm fires, and the head-falling feature added in this revision.</p>
+  </div>
+  <nav>
+    <ol class="toc">
+      <li><a href="#intro">Introduction and objective</a></li>
+      <li><a href="#pipeline">System pipeline</a></li>
+      <li><a href="#metrics">Metrics and how they are calculated</a></li>
+      <li><a href="#score">The drowsiness score</a></li>
+      <li><a href="#alarm">When the alarm sounds</a></li>
+      <li><a href="#head">New feature: head-falling detection</a></li>
+      <li><a href="#config">Configuration parameters</a></li>
+      <li><a href="#testing">Testing and results</a></li>
+      <li><a href="#conclusion">Conclusion and future work</a></li>
+      <li><a href="#refs">References</a></li>
+    </ol>
+  </nav>
+</header>
+
+<!-- 1 -->
+<section id="intro">
+  <h2><span class="n">1</span>Introduction and objective</h2>
+  <p>Driver fatigue causes a large share of road accidents because a sleepy driver loses reaction time well before falling fully asleep. At 100 km/h a car covers about 28 metres every second, so a 2-second microsleep means more than 50 metres driven blind.</p>
+  <p>The objective of this project is to detect the visible signs of fatigue from a camera facing the driver, without any wearable sensor, and to warn the driver early enough to matter. The signs monitored are:</p>
+  <ul>
+    <li><b>Eye closure</b>: long blinks, microsleeps, and the share of time the eyes are closed (PERCLOS).</li>
+    <li><b>Yawning</b>: the mouth held wide open for a sustained period.</li>
+    <li><b>Blink rate</b>: blinking that is unusually slow or unusually fast.</li>
+    <li><b>Head falling</b>: the head dropping forward, backward or sideways as the neck muscles relax.</li>
+  </ul>
+  <p>Everything runs on the live camera. There is no image or video upload and no manual input.</p>
+</section>
+
+<!-- 2 -->
+<section id="pipeline">
+  <h2><span class="n">2</span>System pipeline</h2>
+  <p>Every camera frame passes through the same seven stages, in order. The code for each stage is in the <code>src/</code> folder.</p>
+  <ol class="pipe">
+    <li><b>Face detection</b>YOLO11n, fine-tuned on WIDER FACE, finds face boxes. Confidence ≥ 0.35, NMS IoU 0.45, input 480 px. <code>detector.py</code></li>
+    <li><b>Pick the driver</b>The largest face is the driver. Other faces are labelled as passengers and ignored.</li>
+    <li><b>Landmarks</b>The face box is enlarged by 15% on each side and cropped. FaceMesh places 478 3D landmarks on the crop. <code>landmarks.py</code></li>
+    <li><b>Measurements</b>EAR, MAR, head pitch and head roll are computed from the landmarks.</li>
+    <li><b>Scoring</b>The engine tracks blinks, yawns, head drops and PERCLOS over time and outputs the score and state. <code>drowsiness.py</code></li>
+    <li><b>Heatmap and overlay</b>Gaussian blobs over the eyes and mouth glow hotter as they close or open. Boxes and the HUD are drawn. <code>heatmap.py</code>, <code>overlay.py</code></li>
+    <li><b>Alarm</b>A two-tone siren plays on a background thread, so the video never pauses. <code>alarm.py</code></li>
+  </ol>
+  <p>Cropping the face before FaceMesh (stage 3) improves accuracy, because the eyes cover far more pixels in a face crop than in the full 640×480 frame. It also makes sure the measurements always come from the face YOLO chose as the driver.</p>
+</section>
+
+<!-- 3 -->
+<section id="metrics">
+  <h2><span class="n">3</span>Metrics and how they are calculated</h2>
+  <p>Each metric below gives the formula, the landmark points used, and the thresholds as they are set in <code>config/config.yaml</code>.</p>
+
+  <div class="metric">
+    <header><h3>3.1 Eye Aspect Ratio (EAR)</h3><span class="tag">per frame</span></header>
+    <div class="two">
+      <div class="sub">
+        <p>EAR measures how open an eye is. It uses six landmarks: two eye corners (p1, p4) and two pairs of points on the upper and lower eyelids.</p>
+        <div class="formula">EAR = ( |p2 − p6| + |p3 − p5| ) / ( 2 × |p1 − p4| )
+
+<span class="c">eyelid gap (vertical) ÷ eye width (horizontal)</span>
+<span class="c">final EAR = (left EAR + right EAR) / 2</span></div>
+        <p>Dividing by the eye width makes EAR independent of distance. Leaning toward the camera makes the eye bigger but does not change the ratio.</p>
+      </div>
+      <figure>
+        <div class="svgbox">
+          <svg viewBox="0 0 300 170" width="100%" role="img" aria-label="Six eye landmarks p1 to p6 with vertical and horizontal distances">
+            <path d="M40 85 Q150 20 260 85 Q150 145 40 85 Z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+            <line x1="40" y1="85" x2="260" y2="85" stroke="var(--muted)" stroke-dasharray="4 4"/>
+            <line x1="112" y1="56" x2="112" y2="113" stroke="var(--bad)" stroke-width="2"/>
+            <line x1="188" y1="56" x2="188" y2="113" stroke="var(--bad)" stroke-width="2"/>
+            <g fill="var(--ink)">
+              <circle cx="40" cy="85" r="5"/><circle cx="260" cy="85" r="5"/>
+              <circle cx="112" cy="56" r="5"/><circle cx="188" cy="56" r="5"/>
+              <circle cx="112" cy="113" r="5"/><circle cx="188" cy="113" r="5"/>
+            </g>
+            <g font-size="13" fill="var(--ink)" font-weight="600">
+              <text x="14" y="90">p1</text><text x="268" y="90">p4</text>
+              <text x="100" y="46">p2</text><text x="178" y="46">p3</text>
+              <text x="100" y="133">p6</text><text x="178" y="133">p5</text>
+            </g>
+            <text x="150" y="162" font-size="11" text-anchor="middle" fill="var(--muted)">red = eyelid gap · dashed = eye width</text>
+          </svg>
+        </div>
+        <figcaption>Landmark indices. Left eye: 362, 385, 387, 263, 373, 380. Right eye: 33, 160, 158, 133, 153, 144.</figcaption>
+      </figure>
+    </div>
+    <div class="facts">
+      <div class="fact"><span class="k">Open eye</span><span class="v">0.25 – 0.35</span></div>
+      <div class="fact"><span class="k">Default closed threshold</span><span class="v">EAR &lt; 0.21</span></div>
+      <div class="fact"><span class="k">Confirmation</span><span class="v">2 frames in a row</span></div>
+      <div class="fact"><span class="k">Reopen hysteresis</span><span class="v">threshold + 0.02</span></div>
+    </div>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.2 Personal EAR calibration</h3><span class="tag">adaptive</span></header>
+    <p>Open-eye EAR differs between people. Some drivers sit near 0.22 with eyes open, others near 0.35, so one fixed threshold either misses closures or raises false alarms. The engine learns the driver's own open-eye EAR from the last 30 seconds and sets the threshold relative to it:</p>
+    <div class="formula">baseline  = 80th percentile of open-eye EAR samples (last 30 s)
+threshold = clip( baseline × 0.72 , 0.12 , 0.30 )
+
+<span class="c">active after 45 samples (~1.5 s at 30 FPS); before that, 0.21 is used</span></div>
+    <p>An eye counts as closed below the threshold, and as open again only above threshold + 0.02. This gap stops the state from flickering when EAR sits right on the line.</p>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.3 Closure duration: blink vs microsleep</h3><span class="tag">timed</span></header>
+    <p>A blink and a microsleep both close the eyes. The system tells them apart only by how long the eyes stay shut, timed from the first confirmed closed frame.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Eyes closed for</th><th>Classified as</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td class="num">≤ 0.40 s</td><td>Normal blink</td><td>Counted. Adds nothing to the score.</td></tr>
+        <tr><td class="num">0.40 – 1.20 s</td><td>Long, heavy blink</td><td>Counts toward PERCLOS. The closure channel rises from 0 to 1.</td></tr>
+        <tr><td class="num">≥ 1.20 s</td><td>Microsleep</td><td><span class="pill drowsy">DROWSY</span> immediately, alarm with no extra delay.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="formula">closure_channel = clip( (closure_time − 0.40) / (1.20 − 0.40) , 0 , 1 )</div>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.4 Mouth Aspect Ratio (MAR) and yawning</h3><span class="tag">per frame + timed</span></header>
+    <p>MAR uses the same idea for the mouth: the average lip gap at three points divided by the mouth width.</p>
+    <div class="formula">MAR = mean( |81−178|, |13−14|, |311−402| ) / |61 − 291|
+
+<span class="c">61, 291 = mouth corners · (81,178) (13,14) (311,402) = upper/lower lip pairs</span></div>
+    <p>Talking also opens the mouth, but only in short bursts. To ignore talking, MAR is smoothed (<code>MAR_s ← MAR_s + 0.15 × (MAR − MAR_s)</code>) and the mouth must stay open for a minimum time before it counts as a yawn.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Condition</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Smoothed MAR &gt; 0.45 for ≥ 1.2 s</td><td>Yawn counted, <span class="pill warn">WARNING</span></td></tr>
+        <tr><td>Mouth held open ≥ 2.5 s</td><td><span class="pill drowsy">DROWSY</span> and alarm</td></tr>
+        <tr><td>3 or more yawns in the last 60 s</td><td>At least <span class="pill warn">WARNING</span></td></tr>
+        <tr><td>Yawn ends</td><td>MAR below 80% of the threshold for more than 0.4 s</td></tr>
+      </tbody>
+    </table></div>
+    <p>The eyes naturally squeeze shut during a yawn, so eye closure is not scored while a yawn is in progress.</p>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.5 PERCLOS</h3><span class="tag">rolling 60 s</span></header>
+    <p>PERCLOS (percentage of eyelid closure) is the most widely used fatigue measure in driver-safety research. It is the fraction of recent time the eyes were closed. Only closures longer than a normal blink (0.4 s) are counted, so ordinary blinking never raises it.</p>
+    <div class="formula">PERCLOS = Σ (long closure time in last 60 s) / max( min(elapsed, 60 s), 30 s )
+
+perclos_channel = clip( PERCLOS / 0.20 , 0 , 1 )   <span class="c">20% closed time = fully fatigued</span></div>
+    <p>The divisor is never less than 30 s. Without that floor, two blinks in the first three seconds of a session would look like a very high closure rate.</p>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.6 Blink rate</h3><span class="tag">rolling 60 s</span></header>
+    <p>A healthy blink rate is about 8–28 blinks per minute. Fatigued drivers either stare (too few blinks) or blink rapidly while fighting sleep (too many).</p>
+    <div class="formula">blink_rate = blinks in last 60 s / (rate window in minutes)
+
+if rate &lt; 8 :  blink_channel = (8 − rate) / 8
+if rate &gt; 28:  blink_channel = (rate − 28) / 28
+otherwise   :  blink_channel = 0                <span class="c">ignored for the first 30 s</span></div>
+  </div>
+
+  <div class="metric">
+    <header><h3>3.7 Head pose: pitch and roll</h3><span class="tag new">new in this revision</span></header>
+    <p>FaceMesh gives each landmark a depth value <i>z</i> as well as <i>x</i> and <i>y</i>. Smaller <i>z</i> means closer to the camera. The system takes the line from the forehead (landmark 10) to the chin (landmark 152) and measures two angles:</p>
+    <div class="formula">pitch = atan2( z_chin − z_forehead ,  y_chin − y_forehead )   <span class="c">+ = head falling forward</span>
+roll  = atan2( x_chin − x_forehead ,  y_chin − y_forehead )   <span class="c">± = leaning sideways</span>
+
+<span class="c">z is scaled by the crop width so it is in the same units as x and y</span></div>
+    <p>When the head falls forward, the forehead moves toward the camera and the chin moves away, so <i>z_chin − z_forehead</i> grows while the face's height on screen shrinks. The pitch angle rises steeply.</p>
+    <p><b>Personal posture.</b> Every camera sits at a different angle; a laptop camera below the face sees a different "upright" pitch than a dashboard camera. The engine therefore learns the driver's upright pose as the <b>median pitch and roll over the last 30 s</b> (once it has 30 samples, about 1 s), using only frames where the head is clearly upright. Every judgement uses the angle relative to that posture.</p>
+    <div class="facts">
+      <div class="fact"><span class="k">Forward drop</span><span class="v">≥ 20°</span></div>
+      <div class="fact"><span class="k">Backward drop</span><span class="v">≥ 30°</span></div>
+      <div class="fact"><span class="k">Sideways drop</span><span class="v">≥ 30°</span></div>
+      <div class="fact"><span class="k">Alarm after</span><span class="v">1.5 s down</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="score">
+  <h2><span class="n">4</span>The drowsiness score</h2>
+  <p>One frame says almost nothing, because everyone blinks and everyone opens their mouth. Drowsiness is a pattern over time, so the four channels from Section 3 are each normalised to 0–1 and combined with fixed weights:</p>
+  <div class="formula">raw score = 100 × ( 0.40 × perclos + 0.35 × closure + 0.15 × yawn + 0.10 × blink )
+
+yawn channel = {0 yawns: 0, 1: 0.25, 2: 0.60, 3+: 1.0}  + 0.20 while yawning   <span class="c">(max 1.0)</span></div>
+  <p>The raw score is then raised to a minimum value (a floor) when a yawn or a head drop is in progress, so the gauge always agrees with the state. While the head is down, the floor climbs from 42 up to 58 over the 1.5 s before the alarm.</p>
+  <div class="formula">smoothed score = 0.25 × raw score + 0.75 × previous smoothed score</div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Smoothed score</th><th>State</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0 – 39</td><td><span class="pill alert">ALERT</span></td><td>Driver is attentive</td></tr>
+      <tr><td class="num">40 – 59</td><td><span class="pill warn">WARNING</span></td><td>Early signs of fatigue</td></tr>
+      <tr><td class="num">60 – 100</td><td><span class="pill drowsy">DROWSY</span></td><td>Alarm zone</td></tr>
+      <tr><td class="num">no face</td><td><span class="pill none">NO FACE</span></td><td>Nobody in view. The score decays by 5% per frame.</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Hysteresis:</b> once in WARNING or DROWSY, the score must fall 6 points below the band's lower edge to leave it. This stops the label from flickering when the score sits on a boundary.</p>
+
+  <h3>Worked example</h3>
+  <p>Suppose PERCLOS is 10%, the eyes are currently shut for 0.8 s, there was 1 yawn in the last minute, and the blink rate is 5 per minute.</p>
+  <div class="formula">perclos = 0.10 / 0.20             = 0.500
+closure = (0.8 − 0.4) / 0.8       = 0.500
+yawn    = 1 yawn                  = 0.250
+blink   = (8 − 5) / 8             = 0.375
+
+score = 100 × (0.40×0.500 + 0.35×0.500 + 0.15×0.250 + 0.10×0.375)
+      = 100 × (0.200 + 0.175 + 0.0375 + 0.0375) = 45.0   →  WARNING</div>
+
+  <h3>Try it</h3>
+  <div class="calc">
+    <div class="inputs">
+      <label for="c-perclos"><span class="row">PERCLOS (last 60 s) <output id="o-perclos">10%</output></span>
+        <input id="c-perclos" type="range" min="0" max="40" value="10" step="1"></label>
+      <label for="c-closure"><span class="row">Eyes shut right now <output id="o-closure">0.8 s</output></span>
+        <input id="c-closure" type="range" min="0" max="1.6" value="0.8" step="0.05"></label>
+      <label for="c-yawns"><span class="row">Yawns in last minute <output id="o-yawns">1</output></span>
+        <input id="c-yawns" type="range" min="0" max="4" value="1" step="1"></label>
+      <label for="c-blink"><span class="row">Blink rate (per min) <output id="o-blink">5</output></span>
+        <input id="c-blink" type="range" min="0" max="50" value="5" step="1"></label>
+    </div>
+    <div class="result">
+      <div><span class="big" id="r-score">45</span> <span class="pill warn" id="r-state">WARNING</span></div>
+      <div class="bar"><i id="r-bar"></i></div>
+      <div class="bands"><span style="left:40%">40</span><span style="left:60%">60</span></div>
+      <div class="breakdown" id="r-break"></div>
+    </div>
+  </div>
+  <p style="font-size:.85rem;color:var(--muted)">This shows the raw score. The live system also smooths it over frames and applies the microsleep, yawn and head-drop rules from Section 5.</p>
+</section>
+
+<!-- 5 -->
+<section id="alarm">
+  <h2><span class="n">5</span>When the alarm sounds</h2>
+  <p>There are two kinds of trigger. <b>Timed events</b> (microsleep, long yawn, head down) are already confirmed by their own duration, so the alarm plays the moment the time is reached. A <b>high score</b> must stay at DROWSY for 0.6 s first, so a single noisy frame cannot set it off.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Trigger</th><th>Measured by</th><th>Warning at</th><th>Alarm at</th></tr></thead>
+    <tbody>
+      <tr><td>Microsleep</td><td>EAR below threshold</td><td class="num">&gt; 0.4 s (score rises)</td><td class="num">1.2 s, instant</td></tr>
+      <tr><td>Head falling <span class="tag new">new</span></td><td>Pitch / roll vs upright</td><td class="num">at once</td><td class="num">1.5 s, instant</td></tr>
+      <tr><td>Long yawn</td><td>MAR &gt; 0.45</td><td class="num">1.2 s</td><td class="num">2.5 s, instant</td></tr>
+      <tr><td>Frequent yawning</td><td>Yawn count, 60 s</td><td class="num">3 yawns / min</td><td>via score</td></tr>
+      <tr><td>High score</td><td>All four channels</td><td class="num">score ≥ 40</td><td class="num">score ≥ 60 held 0.6 s</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure>
+    <div class="svgbox">
+      <svg viewBox="0 0 760 270" width="760" style="min-width:640px;width:100%" role="img" aria-label="Timeline from 0 to 3 seconds showing when each signal moves to warning and to alarm">
+        <g font-size="11" fill="var(--muted)" text-anchor="middle">
+          <line x1="130" y1="232" x2="730" y2="232" stroke="var(--rule)"/>
+          <g stroke="var(--rule)">
+            <line x1="130" y1="22" x2="130" y2="236"/><line x1="230" y1="22" x2="230" y2="236"/>
+            <line x1="330" y1="22" x2="330" y2="236"/><line x1="430" y1="22" x2="430" y2="236"/>
+            <line x1="530" y1="22" x2="530" y2="236"/><line x1="630" y1="22" x2="630" y2="236"/>
+            <line x1="730" y1="22" x2="730" y2="236"/>
+          </g>
+          <text x="130" y="250">0 s</text><text x="230" y="250">0.5 s</text><text x="330" y="250">1.0 s</text>
+          <text x="430" y="250">1.5 s</text><text x="530" y="250">2.0 s</text><text x="630" y="250">2.5 s</text><text x="730" y="250">3.0 s</text>
+        </g>
+        <g font-size="12" fill="var(--ink)" font-weight="600">
+          <text x="10" y="52">Eyes closed</text><text x="10" y="102">Head down</text>
+          <text x="10" y="152">Mouth open</text><text x="10" y="202">Score ≥ 60</text>
+        </g>
+        <!-- eyes: 0-0.4 ok, 0.4-1.2 warn, 1.2+ bad -->
+        <rect x="130" y="34" width="80" height="26" fill="var(--ok-soft)" stroke="var(--ok)"/>
+        <rect x="210" y="34" width="160" height="26" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <rect x="370" y="34" width="360" height="26" fill="var(--bad-soft)" stroke="var(--bad)"/>
+        <!-- head: 0-1.5 warn, 1.5+ bad -->
+        <rect x="130" y="84" width="300" height="26" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <rect x="430" y="84" width="300" height="26" fill="var(--bad-soft)" stroke="var(--bad)"/>
+        <!-- mouth: 0-1.2 neutral, 1.2-2.5 warn, 2.5+ bad -->
+        <rect x="130" y="134" width="240" height="26" fill="var(--code-bg)" stroke="var(--rule)"/>
+        <rect x="370" y="134" width="260" height="26" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <rect x="630" y="134" width="100" height="26" fill="var(--bad-soft)" stroke="var(--bad)"/>
+        <!-- score: 0-0.6 wait, 0.6+ bad -->
+        <rect x="130" y="184" width="120" height="26" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <rect x="250" y="184" width="480" height="26" fill="var(--bad-soft)" stroke="var(--bad)"/>
+        <g font-size="11">
+          <text x="170" y="51" text-anchor="middle" fill="var(--ok)">blink</text>
+          <text x="290" y="51" text-anchor="middle" fill="var(--warn)">long closure</text>
+          <text x="550" y="51" text-anchor="middle" fill="var(--bad)" font-weight="600">MICROSLEEP · alarm</text>
+          <text x="280" y="101" text-anchor="middle" fill="var(--warn)">WARNING</text>
+          <text x="580" y="101" text-anchor="middle" fill="var(--bad)" font-weight="600">HEAD FALLING · alarm</text>
+          <text x="250" y="151" text-anchor="middle" fill="var(--muted)">talking ignored</text>
+          <text x="500" y="151" text-anchor="middle" fill="var(--warn)">yawn · WARNING</text>
+          <text x="680" y="151" text-anchor="middle" fill="var(--bad)" font-weight="600">alarm</text>
+          <text x="190" y="201" text-anchor="middle" fill="var(--warn)">hold</text>
+          <text x="490" y="201" text-anchor="middle" fill="var(--bad)" font-weight="600">alarm (repeats every 3 s)</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Figure 1. Time from the start of each event to WARNING and to the alarm, using the default settings.</figcaption>
+  </figure>
+
+  <h3>Alarm behaviour</h3>
+  <ul>
+    <li><b>Sound:</b> a synthesised siren that switches between 880 Hz and 1200 Hz six times per second, lasting 1.2 s, at volume 0.8. A changing pitch is harder to ignore than a constant tone.</li>
+    <li><b>Cooldown:</b> at least 3 s between two sounds, so the alarm repeats every 3 s while the driver stays drowsy.</li>
+    <li><b>Visual:</b> a red border and a "WAKE UP" banner on the video. The banner reads "HEAD FALLING" when the head is the cause.</li>
+    <li><b>Non-blocking:</b> the sound plays on a separate thread, so the camera feed keeps running.</li>
+  </ul>
+</section>
+
+<!-- 6 -->
+<section id="head">
+  <h2><span class="n">6</span>New feature: head-falling detection</h2>
+  <p>The original system watched only the eyes and mouth. A driver whose head drops onto their chest may still be missed if the eyes are hidden from the camera. This revision adds head-pose tracking so a falling head raises the alarm directly.</p>
+
+  <h3>Detection logic</h3>
+  <ol>
+    <li>Measure pitch and roll every frame (Section 3.7) and subtract the learned upright posture.</li>
+    <li>The head counts as <b>down</b> when it is ≥ 20° forward, ≥ 30° backward, or ≥ 30° sideways. Backward tilt is ignored during a yawn, because the head tips back naturally then.</li>
+    <li>While the head is down, the state is at least <span class="pill warn">WARNING</span>. After <b>1.5 s</b> it becomes <span class="pill drowsy">DROWSY</span> and the alarm sounds immediately.</li>
+    <li>The head counts as up again only when it returns within 80% of the threshold for more than 0.3 s. This prevents flicker from noisy frames.</li>
+    <li>Head drops lasting 0.5 s or more are counted as <b>head drops</b> in the session statistics.</li>
+  </ol>
+
+  <h3>When the face falls out of view</h3>
+  <p>A fully fallen head often leaves the camera's view, and FaceMesh can no longer find the face. Without special handling, the system would report NO FACE and stay silent at the most dangerous moment. To prevent this, if the face disappears within 0.8 s of the head being at least half-way down, the system treats the head as still down. The alarm sounds at the 1.5 s mark and keeps repeating for up to 8 s. A driver who simply leaves the seat does not lean forward first, so that case still shows NO FACE with no alarm.</p>
+
+  <h3>What was changed in the code</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>File</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/landmarks.py</code></td><td>Reads landmark depth (<i>z</i>) and computes <code>head_pitch</code> alongside the existing roll angle.</td></tr>
+      <tr><td><code>src/drowsiness.py</code></td><td>Upright-posture calibration, head-down timing, WARNING floor, DROWSY at 1.5 s, the face-lost-while-falling rule, and the head-drop counter.</td></tr>
+      <tr><td><code>src/pipeline.py</code></td><td>Passes pitch from the landmarks to the engine.</td></tr>
+      <tr><td><code>config/config.yaml</code></td><td>Five new settings: <code>head_drop_angle</code>, <code>head_back_angle</code>, <code>head_side_angle</code>, <code>head_drop_duration</code>, <code>head_lost_hold</code>.</td></tr>
+      <tr><td><code>app.py</code></td><td>Head card (Upright / Down, pitch, roll), head-falling alert message, Head drops statistic, and two sidebar sliders.</td></tr>
+      <tr><td><code>src/overlay.py</code></td><td>Pitch, roll and drop count on the video HUD. "HEAD FALLING" banner.</td></tr>
+      <tr><td><code>run_cli.py</code></td><td>Head drops in the end-of-session summary.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 7 -->
+<section id="config">
+  <h2><span class="n">7</span>Configuration parameters</h2>
+  <p>Every threshold lives in <code>config/config.yaml</code>, so the system can be tuned without editing code. The most-used ones can also be changed live from the dashboard sidebar.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Parameter</th><th>Value</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>ear_threshold</code></td><td class="num">0.21</td><td>Eye closed below this (before calibration)</td></tr>
+      <tr><td><code>ear_closed_ratio</code></td><td class="num">0.72</td><td>Calibrated threshold = 72% of open-eye EAR</td></tr>
+      <tr><td><code>ear_consec_frames</code></td><td class="num">2</td><td>Frames below threshold before a closure counts</td></tr>
+      <tr><td><code>blink_max_duration</code></td><td class="num">0.40 s</td><td>Longest normal blink</td></tr>
+      <tr><td><code>microsleep_duration</code></td><td class="num">1.20 s</td><td>Eyes shut this long → alarm</td></tr>
+      <tr><td><code>mar_threshold</code></td><td class="num">0.45</td><td>Mouth counts as wide open above this</td></tr>
+      <tr><td><code>yawn_min_duration</code></td><td class="num">1.20 s</td><td>Mouth open this long = yawn (WARNING)</td></tr>
+      <tr><td><code>yawn_alarm_duration</code></td><td class="num">2.5 s</td><td>Mouth open this long → alarm</td></tr>
+      <tr><td><code>frequent_yawns</code></td><td class="num">3</td><td>Yawns per minute → WARNING</td></tr>
+      <tr><td><code>head_drop_angle</code></td><td class="num">20°</td><td>Forward drop from upright = head down</td></tr>
+      <tr><td><code>head_back_angle</code></td><td class="num">30°</td><td>Backward drop = head down</td></tr>
+      <tr><td><code>head_side_angle</code></td><td class="num">30°</td><td>Sideways drop = head down</td></tr>
+      <tr><td><code>head_drop_duration</code></td><td class="num">1.5 s</td><td>Head down this long → alarm</td></tr>
+      <tr><td><code>head_lost_hold</code></td><td class="num">8.0 s</td><td>Keep alarming after the face falls out of view</td></tr>
+      <tr><td><code>perclos_window</code></td><td class="num">60 s</td><td>Rolling window for PERCLOS and rates</td></tr>
+      <tr><td><code>perclos_threshold</code></td><td class="num">0.20</td><td>20% closed time = full PERCLOS channel</td></tr>
+      <tr><td><code>weights</code></td><td class="num">.40/.35/.15/.10</td><td>PERCLOS / closure / yawn / blink</td></tr>
+      <tr><td><code>warning_score</code></td><td class="num">40</td><td>WARNING band starts</td></tr>
+      <tr><td><code>drowsy_score</code></td><td class="num">60</td><td>DROWSY band starts</td></tr>
+      <tr><td><code>score_smoothing</code></td><td class="num">0.25</td><td>Exponential smoothing factor</td></tr>
+      <tr><td><code>normal_blink_rate</code></td><td class="num">8 – 28 /min</td><td>Healthy blink range</td></tr>
+      <tr><td><code>alarm.min_trigger_duration</code></td><td class="num">0.6 s</td><td>Score must stay DROWSY this long</td></tr>
+      <tr><td><code>alarm.cooldown</code></td><td class="num">3.0 s</td><td>Minimum gap between alarm sounds</td></tr>
+      <tr><td><code>model.confidence</code></td><td class="num">0.35</td><td>YOLO minimum face confidence</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 8 -->
+<section id="testing">
+  <h2><span class="n">8</span>Testing and results</h2>
+  <h3>8.1 End-to-end smoke test</h3>
+  <p><code>tests/smoke_test.py</code> checks every component on the real machine. All checks passed after the head-falling feature was added:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Check</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Config loads and validates; YOLO model loads</td><td><span class="pill alert">PASS</span></td></tr>
+      <tr><td>MediaPipe FaceMesh initialises</td><td><span class="pill alert">PASS</span></td></tr>
+      <tr><td>Alarm sound available (macOS <code>afplay</code>)</td><td><span class="pill alert">PASS</span></td></tr>
+      <tr><td>Webcam found and opens at 640×480</td><td><span class="pill alert">PASS</span></td></tr>
+      <tr><td>Live pipeline: 60 frames processed at 60 FPS, annotated frame and heatmap produced</td><td><span class="pill alert">PASS</span></td></tr>
+      <tr><td>Camera released cleanly; Streamlit dashboard runs without exceptions</td><td><span class="pill alert">PASS</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>8.2 Head-falling scenarios</h3>
+  <p>The engine was given simulated 30 FPS head-pose sequences: 5 s upright (pitch 8°, the camera's own angle), then each scenario.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Scenario</th><th>Final state</th><th>Head drops</th><th>Alarm</th></tr></thead>
+    <tbody>
+      <tr><td>Sitting upright only</td><td><span class="pill alert">ALERT</span></td><td class="num">0</td><td>No</td></tr>
+      <tr><td>Quick 0.5 s nod, then upright</td><td><span class="pill alert">ALERT</span></td><td class="num">0</td><td>No</td></tr>
+      <tr><td>Head falls forward (35°) for 3 s</td><td><span class="pill drowsy">DROWSY</span></td><td class="num">1</td><td>Yes, 1.5 s after the drop</td></tr>
+      <tr><td>Head falls sideways (40°) for 3 s</td><td><span class="pill drowsy">DROWSY</span></td><td class="num">1</td><td>Yes, 1.5 s after the drop</td></tr>
+      <tr><td>Head starts falling, then the face leaves the view</td><td><span class="pill drowsy">DROWSY</span></td><td class="num">1</td><td>Yes</td></tr>
+      <tr><td>Driver leaves the seat (no lean)</td><td><span class="pill none">NO FACE</span></td><td class="num">0</td><td>No</td></tr>
+      <tr><td>Head falls for 3 s, then recovers</td><td><span class="pill alert">ALERT</span></td><td class="num">1</td><td>Yes, then stops</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>8.3 Live demonstration checklist</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Action in front of the camera</th><th>Expected result</th></tr></thead>
+    <tbody>
+      <tr><td>Blink normally</td><td>Blinks count up; score stays low</td></tr>
+      <tr><td>Close the eyes and hold</td><td>Closure timer climbs; eye region turns red; alarm at 1.2 s</td></tr>
+      <tr><td>Open the mouth wide</td><td>Yawn counted at 1.2 s; alarm at 2.5 s</td></tr>
+      <tr><td>Drop the chin to the chest</td><td>Head card shows "Down (forward)"; alarm at 1.5 s</td></tr>
+      <tr><td>Lean the head onto a shoulder</td><td>Head card shows "Down (sideways)"; alarm at 1.5 s</td></tr>
+      <tr><td>Step out of the frame</td><td>NO FACE; score decays; no alarm</td></tr>
+      <tr><td>Someone else leans in</td><td>Largest face labelled DRIVER, the other labelled passenger</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Sit upright for about 2 seconds after pressing Start so the system can learn your normal posture. Until then the Head card shows "learning posture" and forward/backward drops are not judged.</p>
+</section>
+
+<!-- 9 -->
+<section id="conclusion">
+  <h2><span class="n">9</span>Conclusion and future work</h2>
+  <p>The system detects the main visible signs of driver fatigue in real time on an ordinary laptop: microsleeps, long blinks, PERCLOS, abnormal blink rate, yawning, and now a falling head. Combining time-based rules (which react within 1.2–2.5 s) with a smoothed multi-channel score (which captures slower build-up of fatigue) gives fast alarms for dangerous events and few false alarms from normal blinking or talking. Per-driver calibration of both eye opening and head posture lets the same settings work across different faces and camera positions.</p>
+  <h3>Future work</h3>
+  <ul>
+    <li>Use an infrared camera so the system works at night and through sunglasses.</li>
+    <li>Train the custom 5-class YOLO model (face, eye open, eye closed, mouth open, mouth closed) so eyes and mouth are detected in a single pass.</li>
+    <li>Add gaze direction to detect distraction (looking at a phone) as well as fatigue.</li>
+    <li>Run on an embedded board (Raspberry Pi or Jetson Nano) mounted in a vehicle.</li>
+    <li>Evaluate on a public drowsiness dataset (for example NTHU-DDD) to report precision and recall.</li>
+  </ul>
+</section>
+
+<!-- refs -->
+<section id="refs">
+  <h2><span class="n">10</span>References</h2>
+  <ol class="refs">
+    <li>T. Soukupová and J. Čech, "Real-Time Eye Blink Detection using Facial Landmarks," 21st Computer Vision Winter Workshop, 2016.</li>
+    <li>D. F. Dinges and R. Grace, "PERCLOS: A Valid Psychophysiological Measure of Alertness as Assessed by Psychomotor Vigilance," U.S. Federal Highway Administration, FHWA-MCRT-98-006, 1998.</li>
+    <li>Y. Kartynnik, A. Ablavatski, I. Grishchenko and M. Grundmann, "Real-time Facial Surface Geometry from Monocular Video on Mobile GPUs," CVPR Workshops, 2019 (MediaPipe Face Mesh).</li>
+    <li>Ultralytics, "YOLO11," 2024. https://docs.ultralytics.com</li>
+    <li>S. Yang, P. Luo, C. C. Loy and X. Tang, "WIDER FACE: A Face Detection Benchmark," CVPR, 2016.</li>
+  </ol>
+</section>
+
+</article>
+
+<script>
+(function () {
+  const W = { perclos: 0.40, closure: 0.35, yawn: 0.15, blink: 0.10 };
+  const $ = (id) => document.getElementById(id);
+  const clip = (v) => Math.max(0, Math.min(1, v));
+  function update() {
+    const p = +$("c-perclos").value / 100, c = +$("c-closure").value,
+          y = +$("c-yawns").value, b = +$("c-blink").value;
+    $("o-perclos").textContent = Math.round(p * 100) + "%";
+    $("o-closure").textContent = c.toFixed(2) + " s";
+    $("o-yawns").textContent = y >= 4 ? "4+" : String(y);
+    $("o-blink").textContent = String(b);
+    const ch = {
+      perclos: clip(p / 0.20),
+      closure: c <= 0.4 ? 0 : clip((c - 0.4) / 0.8),
+      yawn: ({ 0: 0, 1: 0.25, 2: 0.6 })[y] ?? 1,
+      blink: b < 8 ? clip((8 - b) / 8) : b > 28 ? clip((b - 28) / 28) : 0,
+    };
+    let score = 100 * Object.keys(W).reduce((s, k) => s + W[k] * ch[k], 0);
+    const micro = c >= 1.2;
+    let state = micro || score >= 60 ? "DROWSY" : score >= 40 ? "WARNING" : "ALERT";
+    $("r-score").textContent = score.toFixed(0);
+    const st = $("r-state");
+    st.textContent = micro ? "DROWSY · microsleep" : state;
+    st.className = "pill " + ({ ALERT: "alert", WARNING: "warn", DROWSY: "drowsy" })[state];
+    $("r-bar").style.width = Math.min(100, score) + "%";
+    $("r-break").textContent = Object.keys(W).map((k) =>
+      `${k.padEnd(8)} ${ch[k].toFixed(3)} × ${W[k].toFixed(2)} = ${(100 * W[k] * ch[k]).toFixed(1).padStart(5)} pts`).join("\n");
+  }
+  ["c-perclos", "c-closure", "c-yawns", "c-blink"].forEach((id) => $(id).addEventListener("input", update));
+  update();
+})();
+</script>
+</body>
+</html>
